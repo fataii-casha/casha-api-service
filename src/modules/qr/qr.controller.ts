@@ -19,8 +19,3 @@ export async function createDynamic(req: Request, res: Response) {
   });
   return sendSuccess(res, result, 'Dynamic QR code ready', 201);
 }
-
-export async function resolve(req: Request, res: Response) {
-  const result = await qrService.resolveQrCode(req.body.code);
-  return sendSuccess(res, result, 'QR code resolved');
-}
