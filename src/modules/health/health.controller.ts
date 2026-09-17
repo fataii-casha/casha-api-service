@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { getHealthReport } from './health.service';
 
 export async function check(res: Response) {
