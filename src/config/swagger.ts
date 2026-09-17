@@ -7,25 +7,17 @@ interface SwaggerServer {
 }
 
 function buildServers(): SwaggerServer[] {
-  const localUrl = `http://localhost:${env.port}/api/v1`;
-
-  const candidates: Array<{ url?: string; description: string }> = [
-    { url: env.apiUrl, description: `${env.nodeEnv} (current)` },
-    { url: env.stagingApiUrl, description: 'Staging' },
-    { url: env.productionApiUrl, description: 'Production' },
-    { url: localUrl, description: 'Local' },
-  ];
-
-  const known: SwaggerServer[] = candidates.filter((s): s is SwaggerServer => Boolean(s.url));
-
-  const seen = new Set<string>();
-  const servers = known.filter((s) => {
-    if (seen.has(s.url)) return false;
-    seen.add(s.url);
-    return true;
-  });
-
-  return servers.length > 0 ? servers : [{ url: localUrl, description: 'Local' }];
+  const servers: SwaggerServer[] = [];
+  if (env.apiUrl) {
+    servers.push({ url: env.apiUrl, description: 'Local' });
+  }
+  if (env.stagingApiUrl) {
+    servers.push({ url: env.stagingApiUrl, description: 'Staging' });
+  }
+  if (env.productionApiUrl) {
+    servers.push({ url: env.productionApiUrl, description: 'Production' });
+  }
+  return servers;
 }
 
 const options: swaggerJsdoc.Options = {
