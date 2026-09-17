@@ -14,7 +14,13 @@ async function main() {
     logger.info(`Casha API listening on port ${env.port} [${env.nodeEnv}]`);
     logger.info(`API docs: http://localhost:${env.port}/api-docs`);
   });
-
+  console.log('ENV CHECK:', {
+    NODE_ENV: process.env.NODE_ENV,
+    PORT: process.env.PORT,
+    API_URL: process.env.API_URL,
+    STAGING_API_URL: process.env.STAGING_API_URL,
+    PRODUCTION_API_URL: process.env.PRODUCTION_API_URL,
+  });
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down gracefully...`);
     server.close(async () => {
