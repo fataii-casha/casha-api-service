@@ -6,7 +6,7 @@ import {
   setPersonalDetailsSchema,
   verifyPhoneOtpSchema,
 } from './auth.validation';
-import { requireAuth } from '@/middlewares/auth';
+import { requireAuth } from '../../middlewares/auth';
 
 const router = Router();
 

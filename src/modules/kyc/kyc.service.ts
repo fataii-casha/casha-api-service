@@ -2,8 +2,8 @@ import { AppDataSource } from '../../config/data-source';
 import { User, OnboardingStep } from '../user/user.entity';
 import { ApiError } from '../../utils/api-error';
 import { logger } from '../../config/logger';
-import { dojahIntegration } from '@/integrations/dojah';
-import { nameSimilarity } from '@/utils/levenshtein';
+import { dojahIntegration } from '../../integrations/dojah';
+import { nameSimilarity } from '../../utils/levenshtein';
 
 const userRepo = () => AppDataSource.getRepository(User);
 const NAME_MATCH_THRESHOLD = 0.8;

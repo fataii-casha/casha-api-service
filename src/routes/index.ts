@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import authRoutes from '../modules/auth/auth.routes';
-import kycRoutes from '@/modules/kyc/kyc.routes';
+import kycRoutes from '../modules/kyc/kyc.routes';
 import * as healthController from '../modules/health/health.controller';
 
 const router = Router();

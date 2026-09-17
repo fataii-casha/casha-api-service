@@ -1,6 +1,6 @@
-import { env } from '@/config/env';
-import { logger } from '@/config/logger';
-import { ApiError } from '@/utils/api-error';
+import { env } from '../config/env';
+import { logger } from '../config/logger';
+import { ApiError } from '../utils/api-error';
 import axios from 'axios';
 
 export interface DojahBvnEntity {
