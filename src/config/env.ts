@@ -11,6 +11,9 @@ function required(name: string, fallback?: string): string {
 }
 
 export const env = {
+  apiUrl: process.env.API_URL, // the *current* environment's public URL, set per deployment
+  stagingApiUrl: process.env.STAGING_API_URL,
+  productionApiUrl: process.env.PRODUCTION_API_URL,
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 4000),
   dbHost: required('DB_HOST', 'localhost'),

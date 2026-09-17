@@ -1,6 +1,33 @@
 import swaggerJsdoc from 'swagger-jsdoc';
 import { env } from './env';
 
+interface SwaggerServer {
+  url: string;
+  description: string;
+}
+
+function buildServers(): SwaggerServer[] {
+  const localUrl = `http://localhost:${env.port}/api/v1`;
+
+  const candidates: Array<{ url?: string; description: string }> = [
+    { url: env.apiUrl, description: `${env.nodeEnv} (current)` },
+    { url: env.stagingApiUrl, description: 'Staging' },
+    { url: env.productionApiUrl, description: 'Production' },
+    { url: localUrl, description: 'Local' },
+  ];
+
+  const known: SwaggerServer[] = candidates.filter((s): s is SwaggerServer => Boolean(s.url));
+
+  const seen = new Set<string>();
+  const servers = known.filter((s) => {
+    if (seen.has(s.url)) return false;
+    seen.add(s.url);
+    return true;
+  });
+
+  return servers.length > 0 ? servers : [{ url: localUrl, description: 'Local' }];
+}
+
 const options: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.3',
@@ -10,7 +37,7 @@ const options: swaggerJsdoc.Options = {
       description:
         'QR-based digital wallet for everyday in-person payments in Nigeria — scan-to-pay for consumers and merchants.',
     },
-    servers: [{ url: `http://localhost:${env.port}/api/v1`, description: 'Local' }],
+    servers: buildServers(),
     components: {
       securitySchemes: {
         bearerAuth: {
