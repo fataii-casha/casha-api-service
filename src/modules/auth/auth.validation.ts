@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SECURITY_QUESTION_IDS } from './security-questions';
 
 export const initiatePhoneSchema = z.object({
   body: z.object({
@@ -39,7 +40,23 @@ export const loginSchema = z.object({
 });
 
 export const setPinSchema = z.object({
-  body: z.object({
-    pin: z.string().regex(/^\d{4}$/, 'PIN must be exactly 4 digits'),
-  }),
+  body: z
+    .object({
+      pin: z.string().regex(/^\d{4}$/, 'PIN must be exactly 4 digits'),
+      confirmPin: z.string().regex(/^\d{4}$/, 'Confirm PIN must be exactly 4 digits'),
+      securityQuestionId: z.enum(SECURITY_QUESTION_IDS),
+      securityAnswer: z.string().trim().min(2).max(100),
+    })
+    .refine((data) => data.pin === data.confirmPin, {
+      message: 'PIN and confirm PIN do not match',
+      path: ['confirmPin'],
+    })
+    .refine((data) => !/^(\d)\1{3}$/.test(data.pin), {
+      message: 'PIN cannot be 4 repeated digits (e.g. 1111)',
+      path: ['pin'],
+    })
+    .refine((data) => !['1234', '4321', '0000'].includes(data.pin), {
+      message: 'Choose a less predictable PIN',
+      path: ['pin'],
+    }),
 });

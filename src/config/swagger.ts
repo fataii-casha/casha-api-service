@@ -65,6 +65,20 @@ const options: swaggerJsdoc.Options = {
               type: 'string',
               enum: ['phone_verified', 'profile_set', 'bvn_verified', 'completed'],
             },
+            nextStep: {
+              type: 'string',
+              nullable: true,
+              enum: [
+                'phone_verification',
+                'email_verification',
+                'profile',
+                'kyc',
+                'completed',
+                null,
+              ],
+              description:
+                'The endpoint/step the client should call next, or null if onboarding is complete',
+            },
           },
         },
         AuthResponse: {
@@ -76,16 +90,17 @@ const options: swaggerJsdoc.Options = {
           },
         },
 
-        // Wallet: {
-        //   type: 'object',
-        //   properties: {
-        //     id: { type: 'string', format: 'uuid' },
-        //     userId: { type: 'string', format: 'uuid' },
-        //     balance: { type: 'integer', description: 'Balance in kobo', example: 500000 },
-        //     currency: { type: 'string', example: 'NGN' },
-        //     status: { type: 'string', enum: ['active', 'suspended', 'closed'] },
-        //   },
-        // },
+        Wallet: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            userId: { type: 'string', format: 'uuid' },
+            balance: { type: 'integer', description: 'Balance in kobo', example: 500000 },
+            currency: { type: 'string', example: 'NGN' },
+            status: { type: 'string', enum: ['active', 'suspended', 'closed'] },
+            user: { $ref: '#/components/schemas/User' },
+          },
+        },
         // QrCode: {
         //   type: 'object',
         //   properties: {

@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { requireAuth } from '../../middlewares/auth';
+import { requireAuth, requireOnboardingStep } from '../../middlewares/auth';
 import { validate } from '../../middlewares/validate';
 import { verifyBvnSchema } from './kyc.validation';
 import * as kycController from './kyc.controller';
+import { OnboardingStep } from '../user/user.entity';
 
 const router = Router();
 
@@ -50,6 +51,11 @@ router.use(requireAuth);
  *       503:
  *         description: Dojah service unavailable
  */
-router.post('/bvn/verify', validate(verifyBvnSchema), kycController.verifyBvn);
+router.post(
+  '/bvn/verify',
+  requireOnboardingStep(OnboardingStep.PROFILE),
+  validate(verifyBvnSchema),
+  kycController.verifyBvn,
+);
 
 export default router;

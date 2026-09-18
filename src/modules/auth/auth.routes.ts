@@ -4,9 +4,11 @@ import { validate } from '../../middlewares/validate';
 import {
   initiatePhoneSchema,
   setPersonalDetailsSchema,
+  setPinSchema,
   verifyPhoneOtpSchema,
 } from './auth.validation';
-import { requireAuth } from '../../middlewares/auth';
+import { requireAuth, requireOnboardingStep } from '../../middlewares/auth';
+import { OnboardingStep } from '../user/user.entity';
 
 const router = Router();
 
@@ -131,28 +133,82 @@ router.post('/phone/verify', validate(verifyPhoneOtpSchema), authController.veri
 router.patch(
   '/onboarding/personal-details',
   requireAuth,
+  requireOnboardingStep(OnboardingStep.PHONE_VERIFICATION),
   validate(setPersonalDetailsSchema),
   authController.setPersonalDetails,
 );
 
 /**
  * @openapi
+ * /auth/security-questions:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Get the list of selectable security questions
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: List of security questions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string, example: first_pet }
+ *                       question: { type: string, example: "What was the name of your first pet?" }
+ */
+router.get('/security-questions', authController.listSecurityQuestions);
+
+/**
+ * @openapi
  * /auth/pin:
  *   post:
  *     tags: [Auth]
- *     summary: Set the 4-digit transaction PIN
+ *     summary: Set transaction PIN, confirm PIN, and security question — completes onboarding
+ *     description: Final onboarding step. On success, onboardingStep becomes COMPLETED and the user gains full access to wallet/QR/transaction routes. Requires a token whose onboardingStep is KYC.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [pin]
+ *             required: [pin, confirmPin, securityQuestionId, securityAnswer]
  *             properties:
- *               pin: { type: string, pattern: "^\\d{4}$", example: "1234" }
+ *               pin: { type: string, pattern: "^\\d{4}$", example: "5170" }
+ *               confirmPin: { type: string, pattern: "^\\d{4}$", example: "5170" }
+ *               securityQuestionId:
+ *                 type: string
+ *                 enum: [first_pet, mother_maiden_name, birth_city, first_school, favorite_teacher, childhood_nickname]
+ *               securityAnswer: { type: string, example: Max }
  *     responses:
  *       200:
- *         description: PIN set successfully
+ *         description: PIN and security question set, onboarding complete
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string }
+ *                     onboardingStep: { type: string, example: completed }
+ *       400:
+ *         description: PIN/confirmPin mismatch, weak PIN, or invalid security question id
  */
-// router.post('/pin', requireAuth, validate(setPinSchema), authController.setPin);
+router.post(
+  '/pin',
+  requireAuth,
+  requireOnboardingStep(OnboardingStep.KYC),
+  validate(setPinSchema),
+  authController.setPin,
+);
 export default router;

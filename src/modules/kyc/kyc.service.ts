@@ -4,6 +4,7 @@ import { ApiError } from '../../utils/api-error';
 import { logger } from '../../config/logger';
 import { dojahIntegration } from '../../integrations/dojah';
 import { nameSimilarity } from '../../utils/levenshtein';
+import { getNextStep } from '../auth/onboarding';
 
 const userRepo = () => AppDataSource.getRepository(User);
 const NAME_MATCH_THRESHOLD = 0.8;
@@ -63,5 +64,6 @@ export async function verifyBvn(input: VerifyBvnInput) {
     message: 'BVN verified successfully',
     kycTier: user.kycTier,
     onboardingStep: user.onboardingStep,
+    nextStep: getNextStep(user.onboardingStep),
   };
 }

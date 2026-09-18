@@ -1,11 +1,11 @@
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { env } from '../config/env';
-import { UserRole } from '../modules/user/user.entity';
+import { OnboardingStep, UserRole } from '../modules/user/user.entity';
 
 export interface AccessTokenPayload {
   sub: string;
-  role: UserRole;
-  stage: 'onboarding' | 'full';
+  role?: UserRole;
+  onboardingStep: OnboardingStep;
 }
 
 export function signAccessToken(payload: AccessTokenPayload): string {

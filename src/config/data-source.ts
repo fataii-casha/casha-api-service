@@ -18,6 +18,6 @@ export const AppDataSource = new DataSource({
   migrations: ['src/migrations/*.ts'],
   // synchronize is convenient for early local dev but unsafe past that — switch to
   // migrations (see the scripts below) once the schema stabilizes.
-  synchronize: !isProd,
+  synchronize: false,
   logging: !isProd ? ['error', 'warn'] : ['error'],
 });

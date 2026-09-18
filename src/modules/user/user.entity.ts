@@ -13,9 +13,10 @@ export enum UserRole {
 
 export enum OnboardingStep {
   PHONE_VERIFICATION = 'phone_verification',
-  // EMAIL_VERIFICATION = 'email_verification',
   PROFILE = 'profile',
   KYC = 'kyc',
+  PIN = 'set_pin',
+  WALLET = 'create_wallet',
   COMPLETED = 'completed',
 }
 
@@ -80,6 +81,12 @@ export class User {
     default: OnboardingStep.PHONE_VERIFICATION,
   })
   onboardingStep!: OnboardingStep;
+
+  @Column({ type: 'varchar', nullable: true })
+  securityQuestionId?: string;
+
+  @Column({ type: 'varchar', select: false, nullable: true })
+  securityAnswerHash?: string;
 
   @CreateDateColumn()
   createdAt!: Date;
