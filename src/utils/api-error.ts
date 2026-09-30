@@ -38,4 +38,8 @@ export class ApiError extends Error {
   static serviceUnavailable(message = 'Service temporarily unavailable') {
     return new ApiError(503, message);
   }
+
+  static tooManyRequests(message = 'Too many attempts. Please try again later.') {
+    return new ApiError(429, message);
+  }
 }

@@ -34,6 +34,15 @@ export async function setPin(req: Request, res: Response) {
   return sendSuccess(res, result, 'PIN and security question set');
 }
 
+export async function changePin(req: Request, res: Response) {
+  const result = await authService.changeTransactionPin({
+    userId: req.user!.id,
+    currentPin: req.body.currentPin,
+    newPin: req.body.newPin,
+  });
+  return sendSuccess(res, result, 'PIN changed');
+}
+
 export async function listSecurityQuestions(_req: Request, res: Response) {
   return sendSuccess(res, SECURITY_QUESTIONS, 'Security questions fetched');
 }

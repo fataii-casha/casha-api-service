@@ -2,12 +2,13 @@ import { Router } from 'express';
 import * as authController from './auth.controller';
 import { validate } from '../../middlewares/validate';
 import {
+  changePinSchema,
   initiatePhoneSchema,
   setPersonalDetailsSchema,
   setPinSchema,
   verifyPhoneOtpSchema,
 } from './auth.validation';
-import { requireAuth, requireOnboardingStep } from '../../middlewares/auth';
+import { requireAuth, requireFullAccess, requireOnboardingStep } from '../../middlewares/auth';
 import { OnboardingStep } from '../user/user.entity';
 
 const router = Router();
@@ -210,5 +211,66 @@ router.post(
   requireOnboardingStep(OnboardingStep.KYC),
   validate(setPinSchema),
   authController.setPin,
+);
+
+/**
+ * @openapi
+ * /auth/pin:
+ *   patch:
+ *     tags: [Auth]
+ *     summary: Change the transaction PIN
+ *     description: Requires the current PIN. After 5 incorrect attempts (shared with payment PIN checks) the PIN is locked for 15 minutes. Only available once onboarding is complete.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currentPin, newPin, confirmNewPin]
+ *             properties:
+ *               currentPin: { type: string, pattern: "^\\d{4}$", example: "5170" }
+ *               newPin: { type: string, pattern: "^\\d{4}$", example: "8264" }
+ *               confirmNewPin: { type: string, pattern: "^\\d{4}$", example: "8264" }
+ *     responses:
+ *       200:
+ *         description: PIN changed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: Transaction PIN changed successfully }
+ *       400:
+ *         description: PINs don't match, new PIN same as current, weak PIN, or no PIN set yet
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ *       401:
+ *         description: Missing/invalid token, or current PIN is incorrect
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ *       403:
+ *         description: Onboarding not complete
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ *       429:
+ *         description: Too many incorrect PIN attempts, temporarily locked
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ */
+router.patch(
+  '/pin',
+  requireAuth,
+  requireFullAccess,
+  validate(changePinSchema),
+  authController.changePin,
 );
 export default router;

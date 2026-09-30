@@ -13,6 +13,7 @@ const PIN_SALT_ROUNDS = 12;
 const SECURITY_ANSWER_SALT_ROUNDS = 12;
 
 import { getNextStep } from './onboarding';
+import { assertPinNotLocked, clearPinAttempts, registerFailedPinAttempt } from './pin-attempts';
 
 function toAuthResponse(user: User) {
   const accessToken = signAccessToken({
@@ -155,6 +156,8 @@ export async function setPinAndSecurityQuestion(input: SetPinInput) {
 }
 
 export async function verifyTransactionPin(userId: string, pin: string): Promise<boolean> {
+  await assertPinNotLocked(userId);
+
   const user = await userRepo()
     .createQueryBuilder('user')
     .addSelect('user.transactionPinHash')
@@ -164,7 +167,34 @@ export async function verifyTransactionPin(userId: string, pin: string): Promise
   if (!user?.transactionPinHash) {
     throw ApiError.badRequest('Transaction PIN not set. Please set a PIN first.');
   }
-  return bcrypt.compare(pin, user.transactionPinHash);
+
+  const isMatch = await bcrypt.compare(pin, user.transactionPinHash);
+
+  if (isMatch) {
+    await clearPinAttempts(userId);
+  } else {
+    await registerFailedPinAttempt(userId);
+  }
+
+  return isMatch;
+}
+
+interface ChangePinInput {
+  userId: string;
+  currentPin: string;
+  newPin: string;
+}
+
+export async function changeTransactionPin(input: ChangePinInput) {
+  const isCurrentPinValid = await verifyTransactionPin(input.userId, input.currentPin);
+  if (!isCurrentPinValid) {
+    throw ApiError.unauthorized('Current PIN is incorrect');
+  }
+
+  const newPinHash = await bcrypt.hash(input.newPin, PIN_SALT_ROUNDS);
+  await userRepo().update({ id: input.userId }, { transactionPinHash: newPinHash });
+
+  return { message: 'Transaction PIN changed successfully' };
 }
 
 async function sendOtpSms(phone: string, otp: string): Promise<void> {

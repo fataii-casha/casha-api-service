@@ -60,3 +60,31 @@ export const setPinSchema = z.object({
       path: ['pin'],
     }),
 });
+
+const pinDigits = z.string().regex(/^\d{4}$/, 'PIN must be exactly 4 digits');
+
+const WEAK_PINS = ['0000', '1234', '4321'];
+function isWeakPin(pin: string): boolean {
+  return /^(\d)\1{3}$/.test(pin) || WEAK_PINS.includes(pin);
+}
+
+export const changePinSchema = z.object({
+  body: z
+    .object({
+      currentPin: pinDigits,
+      newPin: pinDigits,
+      confirmNewPin: pinDigits,
+    })
+    .refine((data) => data.newPin === data.confirmNewPin, {
+      message: 'New PIN and confirm PIN do not match',
+      path: ['confirmNewPin'],
+    })
+    .refine((data) => data.newPin !== data.currentPin, {
+      message: 'New PIN must be different from your current PIN',
+      path: ['newPin'],
+    })
+    .refine((data) => !isWeakPin(data.newPin), {
+      message: 'Choose a less predictable PIN',
+      path: ['newPin'],
+    }),
+});

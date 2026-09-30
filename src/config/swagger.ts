@@ -101,6 +101,37 @@ const options: swaggerJsdoc.Options = {
             user: { $ref: '#/components/schemas/User' },
           },
         },
+        UserProfile: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            displayName: { type: 'string', example: 'Ada Obi' },
+            firstName: { type: 'string', nullable: true },
+            lastName: { type: 'string', nullable: true },
+            otherName: { type: 'string', nullable: true },
+            dob: { type: 'string', nullable: true, example: '1998-04-12' },
+            phone: { type: 'string', example: '+2348012345678' },
+            isPhoneVerified: { type: 'boolean' },
+            email: { type: 'string', format: 'email', nullable: true },
+            isEmailVerified: { type: 'boolean' },
+            role: { type: 'string', enum: ['consumer', 'merchant'], nullable: true },
+            businessName: { type: 'string', nullable: true },
+            bvnVerified: { type: 'boolean' },
+            bvnLast4: { type: 'string', nullable: true, example: '7890' },
+            kycTier: { type: 'integer', example: 1 },
+            hasWallet: { type: 'boolean' },
+            onboardingStep: {
+              type: 'string',
+              enum: ['phone_verification', 'email_verification', 'profile', 'kyc', 'completed'],
+            },
+            nextStep: {
+              type: 'string',
+              nullable: true,
+              enum: ['phone_verification', 'email_verification', 'profile', 'kyc', 'completed'],
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
         // QrCode: {
         //   type: 'object',
         //   properties: {
