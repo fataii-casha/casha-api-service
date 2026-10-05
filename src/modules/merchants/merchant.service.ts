@@ -1,6 +1,6 @@
 import { AppDataSource } from '../../config/data-source';
 import { User, OnboardingStep } from '../user/user.entity';
-import { Business, BusinessVerificationStatus } from './business.entity';
+import { Business } from './business.entity';
 import { BusinessDocument, BusinessDocumentType } from './business-document.entity';
 import { fileUrl } from '../../middlewares/upload';
 import { ApiError } from '../../utils/api-error';
