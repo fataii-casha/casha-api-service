@@ -13,8 +13,14 @@ export enum UserRole {
 
 export enum OnboardingStep {
   PHONE_VERIFICATION = 'phone_verification',
-  PROFILE = 'profile',
-  KYC = 'kyc',
+  // EMAIL_VERIFICATION = 'email_verification',
+  PROFILE = 'profile', // consumer path
+  BUSINESS_INFO = 'business_info', // merchant path
+  BUSINESS_DOCUMENTS = 'business_documents', // merchant path
+  BUSINESS_ADDRESS = 'business_address', // merchant path
+  BUSINESS_LOGO = 'business_logo', // merchant path
+  OWNER_DETAILS = 'owner_details', // merchant path
+  KYC = 'kyc', // shared — BVN
   PIN = 'set_pin',
   WALLET = 'create_wallet',
   COMPLETED = 'completed',
@@ -74,6 +80,9 @@ export class User {
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
+
+  @Column({ type: 'boolean', nullable: true })
+  isPoliticallyExposed?: boolean;
 
   @Column({
     type: 'enum',

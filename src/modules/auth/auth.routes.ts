@@ -78,6 +78,8 @@ router.post('/phone/initiate', validate(initiatePhoneSchema), authController.ini
  *             properties:
  *               phone: { type: string, example: "08012345678" }
  *               otp: { type: string, pattern: "^\\d{6}$", example: "123456" }
+ *               accountType: { type: string, enum: [consumer, merchant], default: consumer, description: Only applies when this phone creates a new account — the "choose business" screen sets this to merchant }
+                 
  *     responses:
  *       201:
  *         description: Phone verified, account skeleton created

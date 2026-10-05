@@ -9,8 +9,13 @@ export async function initiatePhone(req: Request, res: Response) {
 }
 
 export async function verifyPhone(req: Request, res: Response) {
-  const result = await authService.verifyPhoneOtp(req.body.phone, req.body.otp);
-  return sendSuccess(res, result, 'Phone verified, continue onboarding', 201);
+  const { created, ...result } = await authService.verifyPhoneOtp(
+    req.body.phone,
+    req.body.otp,
+    req.body.accountType,
+  );
+  const message = created ? 'Phone verified, account created' : 'Phone verified, login successful';
+  return sendSuccess(res, result, message, created ? 201 : 200);
 }
 
 export async function setPersonalDetails(req: Request, res: Response) {

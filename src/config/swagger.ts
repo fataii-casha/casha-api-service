@@ -8,28 +8,44 @@ interface SwaggerServer {
 
 function buildServers(): SwaggerServer[] {
   const servers: SwaggerServer[] = [];
+
   if (env.apiUrl) {
-    servers.push({ url: env.apiUrl, description: 'Local' });
+    servers.push({
+      url: env.apiUrl,
+      description: 'Local',
+    });
   }
+
   if (env.stagingApiUrl) {
-    servers.push({ url: env.stagingApiUrl, description: 'Staging' });
+    servers.push({
+      url: env.stagingApiUrl,
+      description: 'Staging',
+    });
   }
+
   if (env.productionApiUrl) {
-    servers.push({ url: env.productionApiUrl, description: 'Production' });
+    servers.push({
+      url: env.productionApiUrl,
+      description: 'Production',
+    });
   }
+
   return servers;
 }
 
 const options: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.3',
+
     info: {
       title: 'Casha API',
       version: '0.1.0',
       description:
         'QR-based digital wallet for everyday in-person payments in Nigeria — scan-to-pay for consumers and merchants.',
     },
+
     servers: buildServers(),
+
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -38,143 +54,432 @@ const options: swaggerJsdoc.Options = {
           bearerFormat: 'JWT',
         },
       },
+
       schemas: {
         ApiErrorResponse: {
           type: 'object',
           properties: {
-            success: { type: 'boolean', example: false },
-            message: { type: 'string', example: 'Something went wrong' },
-            details: { type: 'object', nullable: true },
+            success: {
+              type: 'boolean',
+              example: false,
+            },
+            message: {
+              type: 'string',
+              example: 'Something went wrong',
+            },
+            details: {
+              type: 'object',
+              nullable: true,
+            },
           },
         },
+
+        UserRole: {
+          type: 'string',
+          enum: ['consumer', 'merchant'],
+          example: 'consumer',
+        },
+
+        OnboardingStep: {
+          type: 'string',
+          enum: [
+            'phone_verification',
+            'profile',
+            'business_info',
+            'business_documents',
+            'business_address',
+            'business_logo',
+            'owner_details',
+            'kyc',
+            'set_pin',
+            'create_wallet',
+            'completed',
+          ],
+        },
+
         User: {
           type: 'object',
+          description:
+            'Public user representation. Sensitive credential hashes are never returned.',
+
           properties: {
-            id: { type: 'string', format: 'uuid' },
-            phone: { type: 'string' },
-            firstName: { type: 'string', nullable: true },
-            lastName: { type: 'string', nullable: true },
-            otherName: { type: 'string', nullable: true },
-            dob: { type: 'string', format: 'date', nullable: true },
-            email: { type: 'string', format: 'email', nullable: true },
-            role: { type: 'string', enum: ['consumer', 'merchant'], nullable: true },
-            businessName: { type: 'string', nullable: true },
-            bvnVerified: { type: 'boolean' },
-            kycTier: { type: 'integer', example: 0 },
-            onboardingStage: {
+            id: {
               type: 'string',
-              enum: ['phone_verified', 'profile_set', 'bvn_verified', 'completed'],
+              format: 'uuid',
             },
-            nextStep: {
+
+            phone: {
+              type: 'string',
+              example: '+2348012345678',
+            },
+
+            isPhoneVerified: {
+              type: 'boolean',
+              example: true,
+            },
+
+            firstName: {
               type: 'string',
               nullable: true,
-              enum: [
-                'phone_verification',
-                'email_verification',
-                'profile',
-                'kyc',
-                'completed',
-                null,
-              ],
+              example: 'Ada',
+            },
+
+            lastName: {
+              type: 'string',
+              nullable: true,
+              example: 'Obi',
+            },
+
+            otherName: {
+              type: 'string',
+              nullable: true,
+              example: 'Chiamaka',
+            },
+
+            dob: {
+              type: 'string',
+              nullable: true,
+              example: '1998-04-12',
+            },
+
+            email: {
+              type: 'string',
+              format: 'email',
+              nullable: true,
+              example: 'ada@example.com',
+            },
+
+            isEmailVerified: {
+              type: 'boolean',
+              example: false,
+            },
+
+            role: {
+              $ref: '#/components/schemas/UserRole',
+              nullable: true,
+            },
+
+            businessName: {
+              type: 'string',
+              nullable: true,
+              example: 'Ada Foods Ltd',
+            },
+
+            bvnVerified: {
+              type: 'boolean',
+              example: true,
+            },
+
+            bvnLast4: {
+              type: 'string',
+              nullable: true,
+              example: '7890',
+              description: 'Last four digits of the user BVN.',
+            },
+
+            kycTier: {
+              type: 'integer',
+              example: 1,
+              minimum: 0,
+            },
+
+            isActive: {
+              type: 'boolean',
+              example: true,
+            },
+
+            isPoliticallyExposed: {
+              type: 'boolean',
+              nullable: true,
+              example: false,
+            },
+
+            onboardingStep: {
+              $ref: '#/components/schemas/OnboardingStep',
+            },
+
+            securityQuestionId: {
+              type: 'string',
+              nullable: true,
+              example: 'security-question-1',
               description:
-                'The endpoint/step the client should call next, or null if onboarding is complete',
+                'Identifier of the selected security question. The security answer itself is never returned.',
+            },
+
+            createdAt: {
+              type: 'string',
+              format: 'date-time',
+            },
+
+            updatedAt: {
+              type: 'string',
+              format: 'date-time',
             },
           },
         },
+
         AuthResponse: {
           type: 'object',
+
           properties: {
-            user: { $ref: '#/components/schemas/User' },
-            accessToken: { type: 'string' },
-            refreshToken: { type: 'string' },
+            user: {
+              $ref: '#/components/schemas/User',
+            },
+
+            accessToken: {
+              type: 'string',
+              description: 'JWT access token.',
+            },
+
+            refreshToken: {
+              type: 'string',
+              description: 'JWT refresh token.',
+            },
           },
         },
 
         Wallet: {
           type: 'object',
+
           properties: {
-            id: { type: 'string', format: 'uuid' },
-            userId: { type: 'string', format: 'uuid' },
-            balance: { type: 'integer', description: 'Balance in kobo', example: 500000 },
-            currency: { type: 'string', example: 'NGN' },
-            status: { type: 'string', enum: ['active', 'suspended', 'closed'] },
-            user: { $ref: '#/components/schemas/User' },
+            id: {
+              type: 'string',
+              format: 'uuid',
+            },
+
+            userId: {
+              type: 'string',
+              format: 'uuid',
+            },
+
+            balance: {
+              type: 'integer',
+              description: 'Wallet balance in kobo.',
+              example: 500000,
+            },
+
+            currency: {
+              type: 'string',
+              example: 'NGN',
+            },
+
+            status: {
+              type: 'string',
+              enum: ['active', 'suspended', 'closed'],
+              example: 'active',
+            },
+
+            user: {
+              $ref: '#/components/schemas/User',
+            },
           },
         },
+
         UserProfile: {
           type: 'object',
+
           properties: {
-            id: { type: 'string', format: 'uuid' },
-            displayName: { type: 'string', example: 'Ada Obi' },
-            firstName: { type: 'string', nullable: true },
-            lastName: { type: 'string', nullable: true },
-            otherName: { type: 'string', nullable: true },
-            dob: { type: 'string', nullable: true, example: '1998-04-12' },
-            phone: { type: 'string', example: '+2348012345678' },
-            isPhoneVerified: { type: 'boolean' },
-            email: { type: 'string', format: 'email', nullable: true },
-            isEmailVerified: { type: 'boolean' },
-            role: { type: 'string', enum: ['consumer', 'merchant'], nullable: true },
-            businessName: { type: 'string', nullable: true },
-            bvnVerified: { type: 'boolean' },
-            bvnLast4: { type: 'string', nullable: true, example: '7890' },
-            kycTier: { type: 'integer', example: 1 },
-            hasWallet: { type: 'boolean' },
-            onboardingStep: {
+            id: {
               type: 'string',
-              enum: ['phone_verification', 'email_verification', 'profile', 'kyc', 'completed'],
+              format: 'uuid',
             },
+
+            displayName: {
+              type: 'string',
+              example: 'Ada Obi',
+            },
+
+            firstName: {
+              type: 'string',
+              nullable: true,
+            },
+
+            lastName: {
+              type: 'string',
+              nullable: true,
+            },
+
+            otherName: {
+              type: 'string',
+              nullable: true,
+            },
+
+            dob: {
+              type: 'string',
+              nullable: true,
+              example: '1998-04-12',
+            },
+
+            phone: {
+              type: 'string',
+              example: '+2348012345678',
+            },
+
+            isPhoneVerified: {
+              type: 'boolean',
+            },
+
+            email: {
+              type: 'string',
+              format: 'email',
+              nullable: true,
+            },
+
+            isEmailVerified: {
+              type: 'boolean',
+            },
+
+            role: {
+              $ref: '#/components/schemas/UserRole',
+              nullable: true,
+            },
+
+            businessName: {
+              type: 'string',
+              nullable: true,
+            },
+
+            bvnVerified: {
+              type: 'boolean',
+            },
+
+            bvnLast4: {
+              type: 'string',
+              nullable: true,
+              example: '7890',
+            },
+
+            kycTier: {
+              type: 'integer',
+              example: 1,
+            },
+
+            isActive: {
+              type: 'boolean',
+            },
+
+            isPoliticallyExposed: {
+              type: 'boolean',
+              nullable: true,
+            },
+
+            hasWallet: {
+              type: 'boolean',
+            },
+
+            onboardingStep: {
+              $ref: '#/components/schemas/OnboardingStep',
+            },
+
             nextStep: {
               type: 'string',
               nullable: true,
-              enum: ['phone_verification', 'email_verification', 'profile', 'kyc', 'completed'],
+              enum: [
+                'phone_verification',
+                'profile',
+                'business_info',
+                'business_documents',
+                'business_address',
+                'business_logo',
+                'owner_details',
+                'kyc',
+                'set_pin',
+                'create_wallet',
+                'completed',
+              ],
+              description:
+                'The onboarding step the client should complete next, or null if onboarding is complete.',
             },
-            createdAt: { type: 'string', format: 'date-time' },
+
+            createdAt: {
+              type: 'string',
+              format: 'date-time',
+            },
+
+            updatedAt: {
+              type: 'string',
+              format: 'date-time',
+            },
           },
         },
-        // QrCode: {
-        //   type: 'object',
-        //   properties: {
-        //     id: { type: 'string', format: 'uuid' },
-        //     code: { type: 'string' },
-        //     ownerId: { type: 'string', format: 'uuid' },
-        //     type: { type: 'string', enum: ['static', 'dynamic'] },
-        //     amount: { type: 'integer', nullable: true, description: 'Amount in kobo' },
-        //     currency: { type: 'string', example: 'NGN' },
-        //     status: { type: 'string', enum: ['active', 'used', 'expired', 'cancelled'] },
-        //     narration: { type: 'string', nullable: true },
-        //     expiresAt: { type: 'string', format: 'date-time', nullable: true },
-        //   },
-        // },
-        // QrCreateResponse: {
-        //   type: 'object',
-        //   properties: {
-        //     qr: { $ref: '#/components/schemas/QrCode' },
-        //     imageDataUrl: { type: 'string', description: 'Base64 PNG data URL of the QR code' },
-        //   },
-        // },
-        // Transaction: {
-        //   type: 'object',
-        //   properties: {
-        //     id: { type: 'string', format: 'uuid' },
-        //     reference: { type: 'string' },
-        //     type: {
-        //       type: 'string',
-        //       enum: ['qr_payment', 'funding', 'withdrawal', 'p2p_transfer'],
-        //     },
-        //     amount: { type: 'integer', description: 'Amount in kobo' },
-        //     currency: { type: 'string', example: 'NGN' },
-        //     status: { type: 'string', enum: ['pending', 'success', 'failed', 'reversed'] },
-        //     senderUserId: { type: 'string', format: 'uuid', nullable: true },
-        //     receiverUserId: { type: 'string', format: 'uuid', nullable: true },
-        //     narration: { type: 'string', nullable: true },
-        //     createdAt: { type: 'string', format: 'date-time' },
-        //   },
-        // },
+
+        Business: {
+          type: 'object',
+
+          properties: {
+            id: {
+              type: 'string',
+              format: 'uuid',
+            },
+
+            ownerId: {
+              type: 'string',
+              format: 'uuid',
+            },
+
+            businessName: {
+              type: 'string',
+            },
+
+            industry: {
+              type: 'string',
+            },
+
+            isRegistered: {
+              type: 'boolean',
+            },
+
+            rcNumber: {
+              type: 'string',
+              nullable: true,
+            },
+
+            addressLine1: {
+              type: 'string',
+              nullable: true,
+            },
+
+            addressLine2: {
+              type: 'string',
+              nullable: true,
+            },
+
+            city: {
+              type: 'string',
+              nullable: true,
+            },
+
+            state: {
+              type: 'string',
+              nullable: true,
+            },
+
+            country: {
+              type: 'string',
+              example: 'Nigeria',
+            },
+
+            logoUrl: {
+              type: 'string',
+              nullable: true,
+            },
+
+            verificationStatus: {
+              type: 'string',
+              enum: ['pending', 'verified', 'rejected'],
+            },
+          },
+        },
       },
     },
-    security: [{ bearerAuth: [] }],
+
+    security: [
+      {
+        bearerAuth: [],
+      },
+    ],
   },
+
   // Every route file with `@openapi` JSDoc blocks gets picked up here.
   apis: ['./src/modules/**/*.routes.ts'],
 };

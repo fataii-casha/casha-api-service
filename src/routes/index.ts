@@ -4,6 +4,7 @@ import walletRoutes from '../modules/wallet/wallet.routes';
 import kycRoutes from '../modules/kyc/kyc.routes';
 import * as healthController from '../modules/health/health.controller';
 import userRoutes from '../modules/user/user.routes';
+import merchantRoutes from '../modules/merchants/merchant.routes';
 
 const router = Router();
 
@@ -56,6 +57,7 @@ router.use('/auth', authRoutes);
 router.use('/kyc', kycRoutes);
 router.use('/wallets', walletRoutes);
 router.use('/users', userRoutes);
+router.use('/merchants', merchantRoutes);
 // router.use('/qr', qrRoutes);
 // router.use('/transactions', transactionRoutes);
 

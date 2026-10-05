@@ -53,7 +53,7 @@ router.use(requireAuth);
  */
 router.post(
   '/bvn/verify',
-  requireOnboardingStep(OnboardingStep.PROFILE),
+  requireOnboardingStep([OnboardingStep.PROFILE, OnboardingStep.OWNER_DETAILS]),
   validate(verifyBvnSchema),
   kycController.verifyBvn,
 );

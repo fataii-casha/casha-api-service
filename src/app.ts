@@ -12,6 +12,7 @@ import { logger } from './config/logger';
 import { swaggerSpec } from './config/swagger';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middlewares/error-handler';
+import path from 'path';
 
 export function createApp(): Application {
   const app = express();
@@ -23,6 +24,7 @@ export function createApp(): Application {
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/api/v1/health' } }));
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
   app.use(
     '/api',

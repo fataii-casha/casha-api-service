@@ -76,39 +76,30 @@ export async function initiatePhoneVerification(phone: string) {
 }
 
 /** Verifies the OTP and creates the account skeleton (phone only). Returns an onboarding-scoped token. */
-export async function verifyPhoneOtp(phone: string, otp: string) {
+export async function verifyPhoneOtp(phone: string, otp: string, accountType: UserRole) {
   const normalizedPhone = normalizeNigerianPhone(phone);
 
   await verifyOtp(normalizedPhone, otp);
 
-  const existing = await userRepo().findOne({
-    where: {
-      phone: normalizedPhone,
-    },
-  });
+  const existing = await userRepo().findOne({ where: { phone: normalizedPhone } });
 
-  // Existing user → login
   if (existing) {
-    return toAuthResponse(existing);
+    if (!existing.isActive) {
+      throw ApiError.forbidden('This account has been deactivated. Contact support.');
+    }
+    return { ...toAuthResponse(existing), created: false };
   }
 
-  // New user → create account and continue onboarding
-  const user = await AppDataSource.transaction(async (manager) => {
-    const created = await manager.getRepository(User).save({
-      firstName: '',
-      lastName: '',
-      isEmailVerified: false,
-      phone: normalizedPhone,
-      isPhoneVerified: true,
-      role: UserRole.CONSUMER,
-      onboardingStage: OnboardingStep.PHONE_VERIFICATION,
-    });
-
-    return created;
+  const user = await userRepo().save({
+    phone: normalizedPhone,
+    isPhoneVerified: true,
+    role: accountType,
+    onboardingStep: OnboardingStep.PHONE_VERIFICATION,
   });
 
-  return toAuthResponse(user);
+  return { ...toAuthResponse(user), created: true };
 }
+
 /** Second onboarding step — requires an onboarding-scoped token from phone verification. */
 export async function setPersonalDetails(input: SetPersonalDetailsInput) {
   const user = await userRepo().findOne({ where: { id: input.userId } });

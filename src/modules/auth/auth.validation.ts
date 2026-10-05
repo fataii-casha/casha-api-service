@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SECURITY_QUESTION_IDS } from './security-questions';
+import { UserRole } from '../user/user.entity';
 
 export const initiatePhoneSchema = z.object({
   body: z.object({
@@ -11,6 +12,9 @@ export const verifyPhoneOtpSchema = z.object({
   body: z.object({
     phone: z.string().min(10).max(14),
     otp: z.string().regex(/^\d{6}$/, 'OTP must be 6 digits'),
+    // Only used when this phone creates a brand-new account; ignored for an
+    // existing user, who keeps whatever role they already have.
+    accountType: z.nativeEnum(UserRole).optional().default(UserRole.CONSUMER),
   }),
 });
 

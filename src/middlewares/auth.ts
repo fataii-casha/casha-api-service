@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ApiError } from '../utils/api-error';
 import { verifyAccessToken } from '../utils/jwt';
 import { UserRole, OnboardingStep } from '../modules/user/user.entity';
-import { STEP_ROUTE_HINTS } from '../modules/auth/onboarding';
+import { getStepRouteHint } from '../modules/auth/onboarding';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -30,7 +30,6 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   }
 }
 
-/** Blocks wallet/QR/transaction routes until onboarding is fully complete. */
 export function requireFullAccess(req: Request, _res: Response, next: NextFunction) {
   if (req.user?.onboardingStep !== OnboardingStep.COMPLETED) {
     return next(ApiError.forbidden('Complete onboarding before accessing this resource'));
@@ -39,11 +38,14 @@ export function requireFullAccess(req: Request, _res: Response, next: NextFuncti
 }
 
 /**
- * Enforces that the token's current onboardingStep exactly matches what this
- * endpoint expects — prevents skipping ahead (e.g. setting a PIN before BVN is
- * verified) or calling a step twice out of order.
+ * Enforces that the token's current onboardingStep matches what this endpoint expects.
+ * Accepts either one step (most endpoints) or a list (endpoints reachable from more
+ * than one prior step — e.g. BVN verification follows PROFILE for consumers but
+ * OWNER_DETAILS for merchants).
  */
-export function requireOnboardingStep(expectedStep: OnboardingStep) {
+export function requireOnboardingStep(expected: OnboardingStep | OnboardingStep[]) {
+  const allowed = Array.isArray(expected) ? expected : [expected];
+
   return (req: Request, _res: Response, next: NextFunction) => {
     const currentStep = req.user?.onboardingStep;
 
@@ -51,8 +53,8 @@ export function requireOnboardingStep(expectedStep: OnboardingStep) {
       return next(ApiError.unauthorized('Authentication required'));
     }
 
-    if (currentStep !== expectedStep) {
-      const hint = STEP_ROUTE_HINTS[currentStep];
+    if (!allowed.includes(currentStep)) {
+      const hint = getStepRouteHint(currentStep, req.user?.role);
       return next(
         ApiError.forbidden(
           hint
