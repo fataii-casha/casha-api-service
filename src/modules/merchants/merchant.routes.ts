@@ -236,10 +236,11 @@ router.patch(
  * /merchants/me:
  *   get:
  *     tags: [Merchant]
- *     summary: Get the current merchant's business profile
+ *     summary: Get the current merchant's business profile and onboarding progress
+ *     description: Works at any onboarding step. business is null until the business-info step is completed. Use onboardingStep and nextStep to decide which screen to show.
  *     responses:
  *       200:
- *         description: Business fetched
+ *         description: Business and onboarding state fetched
  *         content:
  *           application/json:
  *             schema:
@@ -247,9 +248,41 @@ router.patch(
  *               properties:
  *                 success: { type: boolean }
  *                 message: { type: string }
- *                 data: { $ref: '#/components/schemas/Business' }
- *       400:
- *         description: Business info step not completed yet
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     onboardingStep:
+ *                       type: string
+ *                       enum: [phone_verification, business_info, business_documents, business_address, business_logo, owner_details, kyc, completed]
+ *                       example: business_address
+ *                     nextStep:
+ *                       type: string
+ *                       nullable: true
+ *                       enum: [business_info, business_documents, business_address, business_logo, owner_details, kyc, completed]
+ *                       example: business_logo
+ *                     business:
+ *                       nullable: true
+ *                       allOf:
+ *                         - $ref: '#/components/schemas/Business'
+ *                     documents:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           documentType:
+ *                             type: string
+ *                             enum: [cac_certificate, cac_status_report, proof_of_address, owner_valid_id]
+ *                           fileUrl: { type: string, example: /uploads/171234-abc.pdf }
+ *       401:
+ *         description: Missing or invalid token
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ *       403:
+ *         description: Not a merchant account
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
  */
 router.get('/me', merchantController.getMyBusiness);
 

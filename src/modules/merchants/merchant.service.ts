@@ -4,6 +4,7 @@ import { Business } from './business.entity';
 import { BusinessDocument, BusinessDocumentType } from './business-document.entity';
 import { fileUrl } from '../../middlewares/upload';
 import { ApiError } from '../../utils/api-error';
+import { getNextStep } from '../auth/onboarding';
 
 const userRepo = () => AppDataSource.getRepository(User);
 const businessRepo = () => AppDataSource.getRepository(Business);
@@ -166,6 +167,21 @@ export async function setOwnerDetails(input: SetOwnerDetailsInput) {
   };
 }
 
-export async function getMyBusiness(ownerId: string): Promise<Business> {
-  return getBusinessOrThrow(ownerId);
+export async function getMyBusiness(userId: string) {
+  const user = await getUserOrThrow(userId);
+  const business = await businessRepo().findOne({ where: { ownerId: userId } });
+
+  const documents = business
+    ? await documentRepo().find({ where: { businessId: business.id } })
+    : [];
+
+  return {
+    onboardingStep: user.onboardingStep,
+    nextStep: getNextStep(user.onboardingStep, user.role),
+    business, // null until the business-info step is completed
+    documents: documents.map((doc) => ({
+      documentType: doc.documentType,
+      fileUrl: doc.fileUrl,
+    })),
+  };
 }
