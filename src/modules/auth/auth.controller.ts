@@ -18,6 +18,11 @@ export async function verifyPhone(req: Request, res: Response) {
   return sendSuccess(res, result, message, created ? 201 : 200);
 }
 
+export async function refresh(req: Request, res: Response) {
+  const result = await authService.refreshSession(req.body.refreshToken);
+  return sendSuccess(res, result, 'Session refreshed');
+}
+
 export async function setPersonalDetails(req: Request, res: Response) {
   const result = await authService.setPersonalDetails({
     userId: req.user!.id,

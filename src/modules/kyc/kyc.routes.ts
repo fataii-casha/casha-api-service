@@ -31,16 +31,11 @@ router.use(requireAuth);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 data:
- *                   type: object
- *                   properties:
- *                     message: { type: string }
- *                     kycTier: { type: integer, example: 1 }
- *                     onboardingStage: { type: string, example: bvn_verified }
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  *       400:
  *         description: Invalid BVN, record not found, or name mismatch
  *         content:

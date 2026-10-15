@@ -31,6 +31,20 @@ export const env = {
   clientUrl: process.env.CLIENT_URL ?? '*',
   qrDynamicDefaultTtlSeconds: Number(process.env.QR_DYNAMIC_TTL_SECONDS ?? 300),
   redisUrl: required('REDIS_URL', 'redis://127.0.0.1:6379'),
+  // Every OTP is this value instead of a random one, so testers can log in with any number.
+  // On by default in development; set FIXED_OTP= (empty) to turn it off. Refused in production.
+  fixedOtp:
+    process.env.FIXED_OTP ??
+    ((process.env.NODE_ENV ?? 'development') === 'development' ? '000000' : ''),
 } as const;
 
 export const isProd = env.nodeEnv === 'production';
+
+if (env.fixedOtp) {
+  if (isProd) {
+    throw new Error('FIXED_OTP must not be set in production');
+  }
+  if (!/^\d{6}$/.test(env.fixedOtp)) {
+    throw new Error('FIXED_OTP must be exactly 6 digits');
+  }
+}

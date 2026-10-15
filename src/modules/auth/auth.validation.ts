@@ -18,6 +18,12 @@ export const verifyPhoneOtpSchema = z.object({
   }),
 });
 
+export const refreshTokenSchema = z.object({
+  body: z.object({
+    refreshToken: z.string().min(1),
+  }),
+});
+
 const MIN_AGE_YEARS = 18;
 
 export const setPersonalDetailsSchema = z.object({

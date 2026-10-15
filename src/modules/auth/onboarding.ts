@@ -1,5 +1,8 @@
 import { OnboardingStep, UserRole } from '../user/user.entity';
 
+// Both flows end kyc → create_wallet → set_pin → completed. set_pin is never stored:
+// POST /auth/pin moves the user straight from create_wallet to completed, so set_pin
+// only ever appears as a nextStep.
 const CONSUMER_ORDER: OnboardingStep[] = [
   OnboardingStep.PHONE_VERIFICATION,
   OnboardingStep.PROFILE,
@@ -17,6 +20,8 @@ const MERCHANT_ORDER: OnboardingStep[] = [
   OnboardingStep.BUSINESS_LOGO,
   OnboardingStep.OWNER_DETAILS,
   OnboardingStep.KYC,
+  OnboardingStep.WALLET,
+  OnboardingStep.PIN,
   OnboardingStep.COMPLETED,
 ];
 
@@ -45,9 +50,9 @@ export function getStepRouteHint(step: OnboardingStep, role?: UserRole): string 
     [OnboardingStep.BUSINESS_ADDRESS]: 'POST /merchants/logo',
     [OnboardingStep.BUSINESS_LOGO]: 'PATCH /merchants/owner-details',
     [OnboardingStep.OWNER_DETAILS]: 'POST /kyc/bvn/verify',
-    [OnboardingStep.KYC]: 'POST /wallets, then POST /auth/pin',
+    [OnboardingStep.KYC]: 'POST /wallets',
     [OnboardingStep.WALLET]: 'POST /auth/pin',
-    [OnboardingStep.PIN]: 'Completed',
+    [OnboardingStep.PIN]: null,
     [OnboardingStep.COMPLETED]: null,
   };
 

@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { MulterError } from 'multer';
 import { ApiError } from '../utils/api-error';
 import { logger } from '../config/logger';
 import { isProd } from '../config/env';
@@ -20,6 +21,14 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
     });
   }
 
+  if (err instanceof MulterError) {
+    return res.status(400).json({
+      success: false,
+      message: multerErrorMessage(err),
+      details: { code: err.code, field: err.field },
+    });
+  }
+
   logger.error({ err }, 'Unhandled error');
 
   return res.status(500).json({
@@ -27,4 +36,15 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
     message: isProd ? 'Internal server error' : err.message,
     ...(isProd ? {} : { stack: err.stack }),
   });
+}
+
+function multerErrorMessage(err: MulterError): string {
+  switch (err.code) {
+    case 'LIMIT_FILE_SIZE':
+      return 'File is too large. Maximum size is 5MB';
+    case 'LIMIT_UNEXPECTED_FILE':
+      return `Unexpected file field: ${err.field}`;
+    default:
+      return err.message;
+  }
 }

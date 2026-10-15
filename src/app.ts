@@ -12,6 +12,7 @@ import { logger } from './config/logger';
 import { swaggerSpec } from './config/swagger';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middlewares/error-handler';
+import { ApiError } from './utils/api-error';
 import path from 'path';
 
 export function createApp(): Application {
@@ -33,6 +34,9 @@ export function createApp(): Application {
       limit: 300,
       standardHeaders: true,
       legacyHeaders: false,
+      // Hand off to errorHandler so the 429 uses the same JSON envelope as every other error.
+      handler: (_req, _res, next) =>
+        next(ApiError.tooManyRequests('Too many requests. Please try again in a few minutes.')),
     }),
   );
 

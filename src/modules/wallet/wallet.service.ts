@@ -2,7 +2,7 @@ import { EntityManager } from 'typeorm';
 import { AppDataSource } from '../../config/data-source';
 import { Wallet } from './wallet.entity';
 import { ApiError } from '../../utils/api-error';
-import { User } from '../user/user.entity';
+import { OnboardingStep, User } from '../user/user.entity';
 
 function repo(manager: EntityManager = AppDataSource.manager) {
   return manager.getRepository(Wallet);
@@ -35,12 +35,13 @@ export async function getWalletWithUserByUserId(userId: string): Promise<Wallet>
 
 /**
  * Creates the user's wallet — only allowed after BVN verification, per CBN KYC-tiering
- * rules for issuing a funded wallet. Idempotent: returns the existing wallet if one
- * was already created rather than erroring, so the client can safely retry.
+ * rules for issuing a funded wallet — and advances onboarding from kyc to create_wallet.
+ * Idempotent: returns the existing wallet if one was already created rather than
+ * erroring, so the client can safely retry.
  */
 export async function createWalletForUser(
   userId: string,
-): Promise<{ wallet: Wallet; created: boolean }> {
+): Promise<{ user: User; wallet: Wallet; created: boolean }> {
   const user = await userRepo().findOne({
     where: { id: userId },
   });
@@ -57,22 +58,24 @@ export async function createWalletForUser(
     where: { userId },
   });
 
-  if (existing) {
-    return {
-      wallet: existing,
-      created: false,
-    };
+  const wallet =
+    existing ??
+    (await walletRepo().save({
+      userId,
+      balance: '0',
+      currency: 'NGN',
+    }));
+
+  // Only move forward — a retry after the PIN step must not pull the user back.
+  if (user.onboardingStep === OnboardingStep.KYC) {
+    user.onboardingStep = OnboardingStep.WALLET;
+    await userRepo().save(user);
   }
 
-  const wallet = await walletRepo().save({
-    userId,
-    balance: '0',
-    currency: 'NGN',
-  });
-
   return {
+    user,
     wallet,
-    created: true,
+    created: !existing,
   };
 }
 

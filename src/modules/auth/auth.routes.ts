@@ -4,6 +4,7 @@ import { validate } from '../../middlewares/validate';
 import {
   changePinSchema,
   initiatePhoneSchema,
+  refreshTokenSchema,
   setPersonalDetailsSchema,
   setPinSchema,
   verifyPhoneOtpSchema,
@@ -46,6 +47,7 @@ const router = Router();
  *                   type: object
  *                   properties:
  *                     phone: { type: string, example: "+2348012345678" }
+ *                     purpose: { type: string, enum: [login, verification] }
  *                     message: { type: string, example: OTP sent }
  *       400:
  *         description: Invalid phone number format
@@ -90,13 +92,54 @@ router.post('/phone/initiate', validate(initiatePhoneSchema), authController.ini
  *                 - type: object
  *                   properties: { success: { type: boolean }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { $ref: '#/components/schemas/AuthResponse' } }
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  *       400:
  *         description: OTP expired, incorrect, or too many attempts
  *       409:
  *         description: Phone number already registered
  */
 router.post('/phone/verify', validate(verifyPhoneOtpSchema), authController.verifyPhone);
+
+/**
+ * @openapi
+ * /auth/refresh:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Exchange a refresh token for a new token pair
+ *     description: Use when the access token expires (401). Works at any onboarding step — the new access token carries the user's current step. Returns the uniform session response.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [refreshToken]
+ *             properties:
+ *               refreshToken: { type: string }
+ *     responses:
+ *       200:
+ *         description: Session refreshed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
+ *       401:
+ *         description: Refresh token invalid or expired — log in again with OTP
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ *       403:
+ *         description: Account deactivated
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ */
+router.post('/refresh', validate(refreshTokenSchema), authController.refresh);
 
 /**
  * @openapi
@@ -127,7 +170,7 @@ router.post('/phone/verify', validate(verifyPhoneOtpSchema), authController.veri
  *                 - type: object
  *                   properties: { success: { type: boolean }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { $ref: '#/components/schemas/AuthResponse' } }
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  *       400:
  *         description: Invalid dob format or under minimum age
  *       401:
@@ -174,7 +217,7 @@ router.get('/security-questions', authController.listSecurityQuestions);
  *   post:
  *     tags: [Auth]
  *     summary: Set transaction PIN, confirm PIN, and security question — completes onboarding
- *     description: Final onboarding step. On success, onboardingStep becomes COMPLETED and the user gains full access to wallet/QR/transaction routes. Requires a token whose onboardingStep is KYC.
+ *     description: Final onboarding step. On success, onboardingStep becomes COMPLETED and the user gains full access to wallet/QR/transaction routes. Requires a token whose onboardingStep is create_wallet (i.e. POST /wallets done). Same for consumers and merchants. Returns a new token pair — the new accessToken has full access.
  *     requestBody:
  *       required: true
  *       content:
@@ -195,22 +238,18 @@ router.get('/security-questions', authController.listSecurityQuestions);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 data:
- *                   type: object
- *                   properties:
- *                     message: { type: string }
- *                     onboardingStep: { type: string, example: completed }
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  *       400:
  *         description: PIN/confirmPin mismatch, weak PIN, or invalid security question id
  */
 router.post(
   '/pin',
   requireAuth,
-  requireOnboardingStep(OnboardingStep.KYC),
+  requireOnboardingStep(OnboardingStep.WALLET),
   validate(setPinSchema),
   authController.setPin,
 );

@@ -4,7 +4,7 @@ import { Business } from './business.entity';
 import { BusinessDocument, BusinessDocumentType } from './business-document.entity';
 import { fileUrl } from '../../middlewares/upload';
 import { ApiError } from '../../utils/api-error';
-import { getNextStep } from '../auth/onboarding';
+import { buildAccountResponse, buildSessionResponse } from '../user/account-response';
 
 const userRepo = () => AppDataSource.getRepository(User);
 const businessRepo = () => AppDataSource.getRepository(Business);
@@ -48,7 +48,7 @@ export async function setBusinessInfo(input: SetBusinessInfoInput) {
   user.onboardingStep = OnboardingStep.BUSINESS_INFO;
   await userRepo().save(user);
 
-  return { message: 'Business info saved', onboardingStep: user.onboardingStep };
+  return buildSessionResponse(user);
 }
 
 interface UploadBusinessDocumentsInput {
@@ -89,7 +89,7 @@ export async function uploadBusinessDocuments(input: UploadBusinessDocumentsInpu
   user.onboardingStep = OnboardingStep.BUSINESS_DOCUMENTS;
   await userRepo().save(user);
 
-  return { message: 'Business documents saved', onboardingStep: user.onboardingStep };
+  return buildSessionResponse(user);
 }
 
 interface SetBusinessAddressInput {
@@ -115,7 +115,7 @@ export async function setBusinessAddress(input: SetBusinessAddressInput) {
   user.onboardingStep = OnboardingStep.BUSINESS_ADDRESS;
   await userRepo().save(user);
 
-  return { message: 'Business address saved', onboardingStep: user.onboardingStep };
+  return buildSessionResponse(user);
 }
 
 export async function uploadBusinessLogo(userId: string, file?: Express.Multer.File) {
@@ -132,11 +132,7 @@ export async function uploadBusinessLogo(userId: string, file?: Express.Multer.F
   user.onboardingStep = OnboardingStep.BUSINESS_LOGO;
   await userRepo().save(user);
 
-  return {
-    message: 'Business logo uploaded',
-    onboardingStep: user.onboardingStep,
-    logoUrl: business.logoUrl,
-  };
+  return buildSessionResponse(user);
 }
 
 interface SetOwnerDetailsInput {
@@ -160,28 +156,10 @@ export async function setOwnerDetails(input: SetOwnerDetailsInput) {
 
   await userRepo().save(user);
 
-  return {
-    message: 'Owner details saved',
-    onboardingStep: user.onboardingStep,
-    isPoliticallyExposed: user.isPoliticallyExposed,
-  };
+  return buildSessionResponse(user);
 }
 
 export async function getMyBusiness(userId: string) {
   const user = await getUserOrThrow(userId);
-  const business = await businessRepo().findOne({ where: { ownerId: userId } });
-
-  const documents = business
-    ? await documentRepo().find({ where: { businessId: business.id } })
-    : [];
-
-  return {
-    onboardingStep: user.onboardingStep,
-    nextStep: getNextStep(user.onboardingStep, user.role),
-    business, // null until the business-info step is completed
-    documents: documents.map((doc) => ({
-      documentType: doc.documentType,
-      fileUrl: doc.fileUrl,
-    })),
-  };
+  return buildAccountResponse(user);
 }

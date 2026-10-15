@@ -12,7 +12,7 @@ router.use(requireAuth);
  *   get:
  *     tags: [User]
  *     summary: Get the current user's profile
- *     description: Works with any valid token, including onboarding-stage tokens, so the client can check onboardingStep, nextStep, bvnVerified and hasWallet to decide which screen to show.
+ *     description: Works with any valid token, including onboarding-stage tokens, for consumers and merchants alike. Returns the uniform account shape — use onboarding.currentStep / onboarding.nextStep (and user.bvnVerified, user.hasWallet) to decide which screen to show.
  *     responses:
  *       200:
  *         description: Profile fetched
@@ -23,7 +23,7 @@ router.use(requireAuth);
  *                 - type: object
  *                   properties: { success: { type: boolean }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { $ref: '#/components/schemas/UserProfile' } }
+ *                   properties: { data: { $ref: '#/components/schemas/AccountResponse' } }
  *       401:
  *         description: Missing or invalid token
  *         content:

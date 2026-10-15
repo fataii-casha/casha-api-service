@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { ApiError } from '../utils/api-error';
 
 // Local disk for now — swap to S3/Cloudinary before production. The rest of the
 // app only depends on fileUrl()'s return shape, so swapping the backing store
@@ -24,7 +25,7 @@ export const upload = multer({
   limits: { fileSize: MAX_FILE_SIZE_BYTES },
   fileFilter: (_req, file, cb) => {
     if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      cb(new Error('Unsupported file type. Allowed: JPG, PNG, WEBP, PDF'));
+      cb(ApiError.badRequest('Unsupported file type. Allowed: JPG, PNG, WEBP, PDF'));
       return;
     }
     cb(null, true);

@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { redis } from '../../config/redis';
 import { ApiError } from '../../utils/api-error';
+import { env } from '../../config/env';
 
 const OTP_TTL_SECONDS = 10 * 60; // 10 minutes
 const OTP_SALT_ROUNDS = 10;
@@ -16,6 +17,7 @@ function otpKey(phone: string): string {
 }
 
 function generateOtp(): string {
+  if (env.fixedOtp) return env.fixedOtp; // dev/test only — see env.ts
   return Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
 }
 

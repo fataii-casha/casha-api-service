@@ -40,15 +40,11 @@ router.use(requireAuth, requireRole(UserRole.MERCHANT));
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 data:
- *                   type: object
- *                   properties:
- *                     message: { type: string }
- *                     onboardingStep: { type: string, example: business_info }
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  *       403:
  *         description: Wrong onboarding step, or not a merchant account
  */
@@ -84,15 +80,11 @@ router.patch(
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 data:
- *                   type: object
- *                   properties:
- *                     message: { type: string }
- *                     onboardingStep: { type: string, example: business_documents }
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  *       400:
  *         description: Missing rcNumber or one of the 4 required documents for a registered business
  */
@@ -129,15 +121,11 @@ router.post(
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 data:
- *                   type: object
- *                   properties:
- *                     message: { type: string }
- *                     onboardingStep: { type: string, example: business_address }
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  */
 router.patch(
   '/address',
@@ -167,16 +155,11 @@ router.patch(
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 data:
- *                   type: object
- *                   properties:
- *                     message: { type: string }
- *                     onboardingStep: { type: string, example: business_logo }
- *                     logoUrl: { type: string, example: /uploads/171234-abc.png }
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  *       400:
  *         description: Logo file is required
  */
@@ -213,16 +196,11 @@ router.post(
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 data:
- *                   type: object
- *                   properties:
- *                     message: { type: string }
- *                     onboardingStep: { type: string, example: owner_details }
- *                     isPoliticallyExposed: { type: boolean }
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
  */
 router.patch(
   '/owner-details',
@@ -237,42 +215,18 @@ router.patch(
  *   get:
  *     tags: [Merchant]
  *     summary: Get the current merchant's business profile and onboarding progress
- *     description: Works at any onboarding step. business is null until the business-info step is completed. Use onboardingStep and nextStep to decide which screen to show.
+ *     description: Works at any onboarding step. Returns the same account shape as GET /users/me. business is null until the business-info step is completed. Use onboarding.currentStep and onboarding.nextStep to decide which screen to show.
  *     responses:
  *       200:
  *         description: Business and onboarding state fetched
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 message: { type: string }
- *                 data:
- *                   type: object
- *                   properties:
- *                     onboardingStep:
- *                       type: string
- *                       enum: [phone_verification, business_info, business_documents, business_address, business_logo, owner_details, kyc, completed]
- *                       example: business_address
- *                     nextStep:
- *                       type: string
- *                       nullable: true
- *                       enum: [business_info, business_documents, business_address, business_logo, owner_details, kyc, completed]
- *                       example: business_logo
- *                     business:
- *                       nullable: true
- *                       allOf:
- *                         - $ref: '#/components/schemas/Business'
- *                     documents:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           documentType:
- *                             type: string
- *                             enum: [cac_certificate, cac_status_report, proof_of_address, owner_valid_id]
- *                           fileUrl: { type: string, example: /uploads/171234-abc.pdf }
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/AccountResponse' } }
  *       401:
  *         description: Missing or invalid token
  *         content:

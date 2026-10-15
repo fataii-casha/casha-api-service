@@ -15,7 +15,7 @@ router.use(requireAuth);
  *   post:
  *     tags: [Wallet]
  *     summary: Create the user's wallet (only after BVN verification)
- *     description: Idempotent — returns the existing wallet with 200 if one already exists, or creates it and returns 201. Requires a token at the KYC onboarding step (i.e. BVN already verified).
+ *     description: Idempotent — returns the existing wallet with 200 if one already exists, or creates it and returns 201. Requires a token at the kyc step (BVN verified) — or create_wallet, for safe retries. Advances onboarding to create_wallet and returns the uniform session response (new token pair) plus the wallet. Same for consumers and merchants.
  *     responses:
  *       201:
  *         description: Wallet created
@@ -26,7 +26,12 @@ router.use(requireAuth);
  *                 - type: object
  *                   properties: { success: { type: boolean }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { $ref: '#/components/schemas/Wallet' } }
+ *                   properties:
+ *                     data:
+ *                       allOf:
+ *                         - $ref: '#/components/schemas/SessionResponse'
+ *                         - type: object
+ *                           properties: { wallet: { $ref: '#/components/schemas/Wallet' } }
  *       200:
  *         description: Wallet already existed
  *         content:
@@ -36,14 +41,23 @@ router.use(requireAuth);
  *                 - type: object
  *                   properties: { success: { type: boolean }, message: { type: string } }
  *                 - type: object
- *                   properties: { data: { $ref: '#/components/schemas/Wallet' } }
+ *                   properties:
+ *                     data:
+ *                       allOf:
+ *                         - $ref: '#/components/schemas/SessionResponse'
+ *                         - type: object
+ *                           properties: { wallet: { $ref: '#/components/schemas/Wallet' } }
  *       403:
  *         description: BVN not yet verified, or wrong onboarding step for this action
  *         content:
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
  */
-router.post('/', requireOnboardingStep(OnboardingStep.KYC), walletController.create);
+router.post(
+  '/',
+  requireOnboardingStep([OnboardingStep.KYC, OnboardingStep.WALLET]),
+  walletController.create,
+);
 
 /**
  * @openapi
