@@ -234,9 +234,28 @@ const options: swaggerJsdoc.Options = {
         Wallet: {
           type: 'object',
           description:
-            'Same shape from POST /wallets, GET /wallets/me and GET /dashboard. Balances are kobo.',
+            'A main wallet or a stash. Same shape from every wallet endpoint and the dashboard. Balances are kobo.',
           properties: {
             id: { type: 'string', format: 'uuid' },
+            type: {
+              type: 'string',
+              enum: ['main', 'stash'],
+              description:
+                'main: created at onboarding, holds the funding account number, one per user. stash: a user-created sub-wallet.',
+            },
+            name: { type: 'string', example: 'Rent' },
+            color: {
+              type: 'string',
+              nullable: true,
+              example: '#4F46E5',
+              description: 'null = app default',
+            },
+            icon: {
+              type: 'string',
+              nullable: true,
+              example: 'house',
+              description: 'Key from the app icon set; null = app default',
+            },
             availableBalance: {
               type: 'integer',
               description:
@@ -251,6 +270,18 @@ const options: swaggerJsdoc.Options = {
             },
             currency: { type: 'string', example: 'NGN' },
             status: { type: 'string', enum: ['active', 'suspended', 'closed'], example: 'active' },
+            isArchived: {
+              type: 'boolean',
+              description: 'Archived stashes are hidden and frozen: no money in or out.',
+            },
+            archivedAt: { type: 'string', format: 'date-time', nullable: true },
+            deletionScheduledAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              description:
+                'Set on a deleted stash: it can be restored until this time, then it is gone for good.',
+            },
             fundingAccount: {
               nullable: true,
               description:
@@ -274,7 +305,14 @@ const options: swaggerJsdoc.Options = {
             reference: { type: 'string' },
             type: {
               type: 'string',
-              enum: ['qr_payment', 'funding', 'withdrawal', 'p2p_transfer', 'reversal'],
+              enum: [
+                'qr_payment',
+                'funding',
+                'withdrawal',
+                'p2p_transfer',
+                'wallet_transfer',
+                'reversal',
+              ],
             },
             direction: {
               type: 'string',
@@ -303,11 +341,19 @@ const options: swaggerJsdoc.Options = {
             counterparty: {
               type: 'object',
               nullable: true,
-              description: 'The other Casha user. null for external funding and withdrawals.',
+              description:
+                'The other side: another Casha user (kind user), or for moves between your own wallets the other wallet (kind wallet). null for bank funding and withdrawals.',
               properties: {
-                id: { type: 'string', format: 'uuid' },
+                kind: { type: 'string', enum: ['user', 'wallet'] },
+                id: { type: 'string', format: 'uuid', description: 'User id or wallet id' },
                 name: { type: 'string', example: "Ada's Kitchen" },
               },
+            },
+            walletId: {
+              type: 'string',
+              format: 'uuid',
+              description:
+                'The wallet this row is viewed from (direction and balances are for it).',
             },
             parentTransactionId: {
               type: 'string',
@@ -329,10 +375,24 @@ const options: swaggerJsdoc.Options = {
         Dashboard: {
           type: 'object',
           properties: {
-            wallet: { $ref: '#/components/schemas/Wallet' },
+            wallet: {
+              description: 'The active wallet (walletId, default main).',
+              allOf: [{ $ref: '#/components/schemas/Wallet' }],
+            },
+            wallets: {
+              type: 'array',
+              description: 'For the wallet switcher: main first, then non-archived stashes.',
+              items: { $ref: '#/components/schemas/Wallet' },
+            },
+            totalAvailableBalance: {
+              type: 'integer',
+              description:
+                'Sum of availableBalance across all wallets, archived stashes included. Kobo.',
+              example: 750000,
+            },
             recentTransactions: {
               type: 'array',
-              description: 'Latest 10 transactions, newest first.',
+              description: 'Latest 10 transactions of the active wallet, newest first.',
               items: { $ref: '#/components/schemas/TransactionView' },
             },
           },

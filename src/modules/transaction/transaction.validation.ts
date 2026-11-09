@@ -14,5 +14,6 @@ export const listTransactionsSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().positive().optional(),
     limit: z.coerce.number().int().positive().max(100).optional(),
+    walletId: z.string().uuid().optional(), // defaults to the main wallet
   }),
 });

@@ -29,10 +29,12 @@ interface PostingInput {
 }
 
 export interface TransferInput extends PostingInput {
-  type: Extract<TransactionType, 'p2p_transfer' | 'qr_payment'>;
+  type: Extract<TransactionType, 'p2p_transfer' | 'qr_payment' | 'wallet_transfer'>;
   fromWalletId: string;
   toWalletId: string;
   qrCodeId?: string;
+  /** Only for emptying a stash that is being deleted — archived stashes are otherwise frozen. */
+  allowArchivedSource?: boolean;
 }
 
 export interface BankMovementInput extends PostingInput {
@@ -131,10 +133,21 @@ async function lockTransaction(
   return transaction;
 }
 
-function assertCanDebit(wallet: Wallet) {
+function assertNotArchived(wallet: Wallet) {
+  if (wallet.archivedAt) {
+    throw ApiError.badRequest(
+      wallet.deletionScheduledAt
+        ? `"${wallet.name}" is being deleted. Restore it to use it.`
+        : `"${wallet.name}" is archived. Unarchive it to use it.`,
+    );
+  }
+}
+
+function assertCanDebit(wallet: Wallet, { allowArchived = false } = {}) {
   if (wallet.status !== WalletStatus.ACTIVE) {
     throw ApiError.badRequest('Wallet is not active');
   }
+  if (!allowArchived) assertNotArchived(wallet);
 }
 
 /** Suspended wallets still receive money (it arrived at the bank either way) — they just can't spend it. */
@@ -142,6 +155,7 @@ function assertCanCredit(wallet: Wallet) {
   if (wallet.status === WalletStatus.CLOSED) {
     throw ApiError.badRequest('Receiving wallet is closed');
   }
+  assertNotArchived(wallet);
 }
 
 /**
@@ -201,7 +215,10 @@ function createTransaction(manager: EntityManager, fields: Partial<Transaction>)
   return manager.save(Transaction, manager.create(Transaction, fields));
 }
 
-/** Wallet-to-wallet movement inside Casha (P2P transfer, QR payment). Settles immediately. */
+/**
+ * Wallet-to-wallet movement inside Casha (P2P transfer, QR payment, or main ↔ stash between a
+ * user's own wallets). Settles immediately.
+ */
 export async function transferBetweenWallets(input: TransferInput): Promise<PostingResult> {
   const amount = toKobo(input.amount);
   if (input.fromWalletId === input.toWalletId) {
@@ -213,8 +230,11 @@ export async function transferBetweenWallets(input: TransferInput): Promise<Post
     const from = wallets.get(input.fromWalletId)!;
     const to = wallets.get(input.toWalletId)!;
 
-    assertCanDebit(from);
+    assertCanDebit(from, { allowArchived: input.allowArchivedSource });
     assertCanCredit(to);
+    if (input.type === 'wallet_transfer' && from.userId !== to.userId) {
+      throw ApiError.badRequest('Wallet transfers are only between your own wallets');
+    }
     if (from.currency !== to.currency) {
       throw ApiError.badRequest('Wallets use different currencies');
     }

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
-import { EntityManager } from 'typeorm';
+import { EntityManager, IsNull } from 'typeorm';
 import { AppDataSource } from '../../config/data-source';
-import { Wallet, WalletProvider } from './wallet.entity';
+import { Wallet, WalletProvider, WalletType } from './wallet.entity';
 import { WalletAccount } from './walletAccount.entity';
 import { ApiError } from '../../utils/api-error';
 import { OnboardingStep, User } from '../user/user.entity';
@@ -17,19 +17,19 @@ function repo(manager: EntityManager = AppDataSource.manager) {
 const userRepo = () => AppDataSource.getRepository(User);
 const walletRepo = () => AppDataSource.getRepository(Wallet);
 
-/** Lean lookup for internal use (debit/credit flows) — no user relation. */
+/** The user's main wallet. Lean lookup for internal use (debit/credit flows). */
 export async function getWalletByUserId(userId: string, manager?: EntityManager): Promise<Wallet> {
-  const wallet = await repo(manager).findOne({ where: { userId } });
+  const wallet = await repo(manager).findOne({ where: { userId, type: WalletType.MAIN } });
   if (!wallet) {
     throw ApiError.notFound('Wallet not found for this user');
   }
   return wallet;
 }
 
-/** For the GET /wallets/me endpoint and the dashboard — includes the linked bank accounts. */
+/** The user's main wallet with its linked bank accounts (GET /wallets/me, the dashboard default). */
 export async function getWalletWithAccountsByUserId(userId: string): Promise<Wallet> {
   const wallet = await repo().findOne({
-    where: { userId },
+    where: { userId, type: WalletType.MAIN },
     relations: { accounts: true },
   });
 
@@ -38,6 +38,39 @@ export async function getWalletWithAccountsByUserId(userId: string): Promise<Wal
   }
 
   return wallet;
+}
+
+/**
+ * One of the user's wallets (main or stash) by id, including archived and pending-deletion
+ * stashes. Permanently deleted wallets and other users' wallets are a 404.
+ */
+export async function getUserWallet(userId: string, walletId: string): Promise<Wallet> {
+  const wallet = await repo().findOne({
+    where: { id: walletId, userId, deletedAt: IsNull() },
+    relations: { accounts: true },
+  });
+
+  if (!wallet || isDeletionDue(wallet)) {
+    throw ApiError.notFound('Wallet not found');
+  }
+  return wallet;
+}
+
+/** The deletion grace period has passed but the finaliser job hasn't run yet. */
+export function isDeletionDue(wallet: Wallet): boolean {
+  return Boolean(wallet.deletionScheduledAt && wallet.deletionScheduledAt.getTime() <= Date.now());
+}
+
+/** All of the user's wallets that still exist: main first, then stashes oldest first. */
+export async function listUserWallets(userId: string): Promise<Wallet[]> {
+  const wallets = await repo().find({
+    where: { userId, deletedAt: IsNull() },
+    relations: { accounts: true },
+    order: { createdAt: 'ASC' },
+  });
+  return wallets
+    .filter((wallet) => !isDeletionDue(wallet))
+    .sort((a, b) => Number(b.type === WalletType.MAIN) - Number(a.type === WalletType.MAIN));
 }
 
 /**
@@ -66,7 +99,7 @@ export async function createWalletForUser(
   }
 
   const existing = await walletRepo().findOne({
-    where: { userId },
+    where: { userId, type: WalletType.MAIN },
     relations: { accounts: true },
   });
 
@@ -196,10 +229,18 @@ export function toWalletView(wallet: Wallet) {
 
   return {
     id: wallet.id,
+    type: wallet.type,
+    name: wallet.name,
+    color: wallet.color ?? null,
+    icon: wallet.icon ?? null,
     availableBalance: Number(wallet.availableBalance),
     ledgerBalance: Number(wallet.ledgerBalance),
     currency: wallet.currency,
     status: wallet.status,
+    isArchived: Boolean(wallet.archivedAt),
+    archivedAt: wallet.archivedAt ?? null,
+    /** Set while a deleted stash can still be restored; it is gone for good after this time. */
+    deletionScheduledAt: wallet.deletionScheduledAt ?? null,
     fundingAccount,
     accounts,
     createdAt: wallet.createdAt,

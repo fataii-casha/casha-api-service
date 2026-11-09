@@ -405,9 +405,10 @@ Same as `/users/me`. Returns the identical account response.
 | Endpoint | Notes |
 |---|---|
 | `PATCH /auth/pin` | Body `{ currentPin, newPin, confirmNewPin }`. Same PIN rules. New PIN must differ from current. Returns `data: { message }` |
-| `GET /dashboard` | Home screen: balances, funding account, latest 10 transactions (§9) |
-| `GET /transactions` | Full paginated history (§9) |
-| `GET /wallets/me` | The wallet object alone (§9). Use `/users/me` for profile details |
+| `GET /dashboard?walletId=` | Home screen for the active wallet, plus the wallet switcher list (§9) |
+| `GET /transactions?walletId=` | Full paginated history of one wallet (§9) |
+| `GET /wallets/me` | The main wallet object (§9). Use `/users/me` for profile details |
+| `/wallets…` stash endpoints | Create, rename, archive, delete and restore stashes, and move money between wallets (§10) |
 | `POST /wallets/mock-fund` | **Dev only, not available in production.** Body `{ amount }`, an integer in kobo. Creates a real `funding` transaction, so it shows in the history |
 
 **PIN lockout:** 5 wrong PIN attempts (shared between change-PIN and payments) lock the PIN for **15 minutes** → **429**.
@@ -499,9 +500,11 @@ async function onUnauthorized(failedRequest) {
 
 Both endpoints need completed onboarding (`onboarding.isCompleted`). Otherwise they return **403**. Both use the same shape for consumers and merchants.
 
-### `GET /dashboard`
+Both endpoints are **per wallet**. A user has a main wallet plus any stashes (§10), and the home screen shows the **active wallet**, the one selected in the wallet switcher. Pass its id as `walletId`. Without it you get the main wallet. The server doesn't remember the selection, so keep it in the app (e.g. local storage) and send it on every call. If a stored `walletId` returns **404** (the stash was deleted for good), fall back to the main wallet.
 
-Call this when the home screen opens, and again after the user makes or receives a payment.
+### `GET /dashboard?walletId=…`
+
+Call this when the home screen opens, when the user switches wallet, and after the user makes or receives a payment.
 
 #### The two balances
 
@@ -514,13 +517,20 @@ They are equal unless money is **on hold**. For example, during a bank withdrawa
 
 ```jsonc
 {
-  "wallet": {
+  "wallet": {                             // the ACTIVE wallet
     "id": "4e1b…",
+    "type": "main",                       // "main" | "stash"
+    "name": "Main",
+    "color": null,                        // "#RRGGBB" or null = your default
+    "icon": null,                         // icon key or null = your default
     "availableBalance": 400000,           // kobo → ₦4,000.00. The main balance
     "ledgerBalance": 500000,              // kobo → ₦5,000.00
     "currency": "NGN",
     "status": "active",                   // "active" | "suspended" | "closed"
-    "fundingAccount": {                   // null if the account number isn't set up yet
+    "isArchived": false,
+    "archivedAt": null,
+    "deletionScheduledAt": null,          // set on a deleted stash (restorable until then)
+    "fundingAccount": {                   // main wallet only; null for stashes
       "id": "…",
       "provider": "stellas",
       "accountNumber": "9000089245",
@@ -532,23 +542,27 @@ They are equal unless money is **on hold**. For example, during a bank withdrawa
     "accounts": [ /* every linked account */ ],
     "createdAt": "…", "updatedAt": "…"
   },
-  "recentTransactions": [                 // latest 10, newest first, ALL statuses
+  "wallets": [ /* wallet switcher: main first, then non-archived stashes, same shape */ ],
+  "totalAvailableBalance": 950000,        // sum over ALL wallets, archived stashes included
+  "recentTransactions": [                 // the active wallet's latest 10, newest first, ALL statuses
     {
       "id": "3cf3…",
       "reference": "TXN-…",
-      "type": "qr_payment",               // "qr_payment" | "funding" | "withdrawal" | "p2p_transfer" | "reversal"
-      "direction": "debit",               // "credit" = money in, "debit" = money out, for THIS user
+      "type": "qr_payment",               // "qr_payment" | "funding" | "withdrawal" | "p2p_transfer" | "wallet_transfer" | "reversal"
+      "direction": "debit",               // "credit" = money in, "debit" = money out, for THIS wallet
       "amount": 150000,                   // kobo
       "currency": "NGN",
       "status": "success",                // "pending" | "success" | "failed" | "reversed"
-      "balanceBefore": 650000,            // kobo, the user's balance just before. null if pending/failed
-      "balanceAfter": 500000,             // kobo, the user's balance just after. null if pending/failed
+      "balanceBefore": 650000,            // kobo, this wallet's balance just before. null if pending/failed
+      "balanceAfter": 500000,             // kobo, this wallet's balance just after. null if pending/failed
       "narration": "Lunch",               // nullable
       "failureReason": null,              // set when status is "failed"
-      "counterparty": {                   // the other Casha user; null for bank funding/withdrawals
-        "id": "0f1d…",
-        "name": "Ada's Kitchen"
+      "counterparty": {                   // null for bank funding/withdrawals
+        "kind": "user",                   // "user" = another Casha user, "wallet" = your other wallet
+        "id": "0f1d…",                    // user id or wallet id
+        "name": "Ada's Kitchen"           // display name, or the wallet's name
       },
+      "walletId": "4e1b…",                // the wallet this row is viewed from
       "parentTransactionId": null,        // for a reversal: the id of the transaction it reverses
       "createdAt": "2026-11-05T19:14:56.307Z",
       "completedAt": "2026-11-05T19:14:56.307Z"   // null while pending
@@ -560,19 +574,21 @@ They are equal unless money is **on hold**. For example, during a bank withdrawa
 Display tips:
 - **Amounts:** `amount` and both balances are always positive and in kobo. Use `direction` for the sign and colour (`+₦1,500.00` vs `-₦1,500.00`).
 - **Balance after:** show `balanceAfter` on each row or on the detail screen ("Balance: ₦5,000.00"). Rows are ordered so each row's `balanceBefore` equals the `balanceAfter` of the row below it. Hide the line when it is `null` (pending or failed).
-- **Title for each row:** `counterparty.name` if present. Otherwise use the type: "Wallet funding" for `funding`, "Withdrawal" for `withdrawal`, "Reversal" for `reversal`. Show `narration` underneath when present (for a reversal it holds the reason).
+- **Title for each row:** `counterparty.name` if present. For `kind: "wallet"` say where the money went or came from ("To Rent" / "From Main"), using the wallet's colour and icon if you have them. Otherwise use the type: "Wallet funding" for `funding`, "Withdrawal" for `withdrawal`, "Reversal" for `reversal`. Show `narration` underneath when present (for a reversal it holds the reason).
 - **Status:** show a badge for anything that isn't `success`. Failed rows don't affect the balance. A `pending` withdrawal is already taken out of `availableBalance`.
 - **Reversals:** the original row changes to `status: "reversed"` and a new `reversal` row appears with the opposite `direction`. Its `parentTransactionId` points to the original row.
 - **Ordering:** newest first, by when the transaction affected the balance. A pending withdrawal moves to the top when it completes.
-- **Empty state:** `recentTransactions` is `[]` for a new user. Show the funding account number with a "Fund your wallet" prompt.
+- **Empty state:** `recentTransactions` is `[]` for a new user. On the main wallet, show the funding account number with a "Fund your wallet" prompt. On an empty stash, offer "Add money", which calls `POST /wallets/transfers` from main.
+- **Total balance:** if you show an "all wallets" total, use `totalAvailableBalance`. It includes archived stashes because that money is still the user's.
 - `wallet.status` other than `active` means the user can't transact. Show a notice.
 
-### `GET /transactions?page=1&limit=20`
+### `GET /transactions?walletId=…&page=1&limit=20`
 
-The "See all" screen. Items use exactly the same shape as `recentTransactions`.
+The "See all" screen for one wallet. Items use exactly the same shape as `recentTransactions`. Archived and pending-deletion stashes can still be viewed.
 
 | Query | Default | Rules |
 |---|---|---|
+| `walletId` | main wallet | uuid of one of the user's wallets. Someone else's wallet → 404 |
 | `page` | 1 | integer ≥ 1 |
 | `limit` | 20 | integer 1–100 (more → 400 `"Validation failed"`) |
 
@@ -592,7 +608,66 @@ For infinite scroll, load `page + 1` until `page === totalPages`. A `page` beyon
 
 ---
 
-## 10. Changes from the previous API
+## 10. Wallets & stashes
+
+Every user has one **main wallet**, created during onboarding. It holds the bank account number and receives all funding. Users can also create **stashes**: sub-wallets with their own name, colour, icon and balance. Money moves between wallets instantly, and a stash can be spent from like the main wallet.
+
+All endpoints below need completed onboarding and return the wallet object from §9 (`data`), unless noted.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /wallets` | Main + non-archived stashes (main first). `?archived=true` → only archived stashes, including deleted ones still restorable |
+| `GET /wallets/{walletId}` | One wallet |
+| `POST /wallets/stashes` | Create a stash. Body `{ name, color?, icon? }` → **201** |
+| `PATCH /wallets/{walletId}` | Change any of `{ name, color, icon }`. Works on main too. `null` color/icon resets to your default |
+| `POST /wallets/transfers` | Move money between your own wallets (see below) |
+| `POST /wallets/{walletId}/archive` | Archive a stash |
+| `POST /wallets/{walletId}/unarchive` | Unarchive it |
+| `DELETE /wallets/{walletId}` | Delete a stash (restorable for 30 days) |
+| `POST /wallets/{walletId}/restore` | Undo a delete within the 30 days |
+
+**Fields**
+- `name`: 1–30 characters, trimmed. Must be unique among the user's wallets, ignoring case (the main wallet's name counts) → **409** `You already have a wallet called "…"`.
+- `color`: a hex code like `#4F46E5`. It is returned upper-case.
+- `icon`: a key from **your** icon set, lowercase letters, digits, `-` and `_` (e.g. `piggy-bank`). The server only stores it, so agree the list in the app.
+- Up to **20** stashes per user → **400** after that.
+
+### Moving money: `POST /wallets/transfers`
+
+```json
+{ "fromWalletId": "…", "toWalletId": "…", "amount": 500000, "narration": "Saving for rent", "idempotencyKey": "b9a7c2e4-0001" }
+```
+
+- `amount` in kobo. `narration` is optional and defaults to `"Main → Rent"`.
+- **`idempotencyKey`**: generate one per tap (8–64 chars: letters, digits, `-`, `_`) and **reuse it if you retry** after a timeout. A repeat returns **200** `"Transfer already processed"` with the original transaction, so money never moves twice. A new transfer returns **201** `"Money moved"`.
+- `data` is `{ transaction, from, to }`: the transaction as seen from the sending wallet, plus both wallets' new balances. Update the UI from these instead of refetching.
+- It shows in both wallets' history as `type: "wallet_transfer"`, with `counterparty.kind: "wallet"`.
+- Errors: **400** `"Insufficient balance"`, **400** when either wallet is archived or deleted, **404** if either wallet isn't the user's.
+
+### Archive
+
+Archiving hides a stash from the wallet switcher and **freezes** it: no money in or out until it's unarchived. The balance stays in the stash and still counts in `totalAvailableBalance`. List archived stashes with `GET /wallets?archived=true`. Both calls are safe to repeat. The main wallet can't be archived (**400**).
+
+### Delete (30-day restore window)
+
+`DELETE /wallets/{walletId}`:
+1. Any money in the stash moves to the main wallet first. `data.movedToMain` says how much in kobo, and it appears in both histories. Tell the user, e.g. "₦2,500 moved to Main".
+2. The stash is archived and `deletionScheduledAt` is set 30 days ahead. It shows up in `GET /wallets?archived=true` meanwhile. Show "Deletes on {date}" with a **Restore** button.
+3. `POST /wallets/{walletId}/restore` within those 30 days brings it back as an active, **empty** stash. Its money already went to main, so offer to move it back.
+4. After 30 days it's gone for good: every call returns **404** and it disappears from all lists. Its name becomes free to reuse.
+
+Notes:
+- **409** if a transaction on the stash is still in progress. Retry once it completes.
+- Deleting again is harmless (`movedToMain: 0`). Unarchiving a deleted stash returns **409**; use restore.
+- The main wallet can't be deleted (**400**).
+
+### Spending from a stash
+
+A stash can pay like the main wallet. Payment endpoints (QR, transfers to other users) will take the paying wallet's id, defaulting to main, so pass the active wallet. Funding from the bank always lands in the main wallet.
+
+---
+
+## 11. Changes from the previous API
 
 If you built against an earlier version:
 
@@ -614,6 +689,9 @@ If you built against an earlier version:
 | Wallet had no account number | `wallet.accounts[]` holds the funding account number |
 | No dashboard or history endpoints | `GET /dashboard`, `GET /transactions` |
 | No way to go back during onboarding | `POST /auth/onboarding/back` (§5.4) |
+| One wallet per user | Main wallet + stashes (§10). Wallet objects gained `type`, `name`, `color`, `icon`, `isArchived`, `archivedAt`, `deletionScheduledAt` |
+| `/dashboard` and `/transactions` covered the user's whole account | Per wallet: `?walletId=`, default main. `/dashboard` adds `wallets` and `totalAvailableBalance` |
+| `counterparty` was `{ id, name }` (always a user) | `{ kind: "user" \| "wallet", id, name }`. Transactions also carry `walletId` |
 | `wallet.balance` (a string from `/wallets/*`, a number from `/dashboard`) | `wallet.availableBalance` + `wallet.ledgerBalance`, numbers everywhere |
 | `GET /wallets/me` nested the `user` and had a `userId` | Wallet object only (use `/users/me` for the profile); adds `fundingAccount` |
 | `/dashboard` `fundingAccount` had 3 fields | Full linked-account object (`id`, `provider`, `bankCode`, `isPrimary` added) |

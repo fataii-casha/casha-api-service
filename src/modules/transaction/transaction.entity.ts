@@ -7,7 +7,13 @@ import {
   Index,
 } from 'typeorm';
 
-export type TransactionType = 'qr_payment' | 'funding' | 'withdrawal' | 'p2p_transfer' | 'reversal';
+export type TransactionType =
+  | 'qr_payment'
+  | 'funding'
+  | 'withdrawal'
+  | 'p2p_transfer'
+  | 'wallet_transfer' // between two wallets of the same user (main ↔ stash)
+  | 'reversal';
 export type TransactionStatus = 'pending' | 'success' | 'failed' | 'reversed';
 
 @Entity('transactions')
@@ -20,13 +26,15 @@ export class Transaction {
 
   @Column({
     type: 'enum',
-    enum: ['qr_payment', 'funding', 'withdrawal', 'p2p_transfer', 'reversal'],
+    enum: ['qr_payment', 'funding', 'withdrawal', 'p2p_transfer', 'wallet_transfer', 'reversal'],
   })
   type!: TransactionType;
 
+  @Index()
   @Column({ type: 'uuid', nullable: true })
   senderWalletId?: string | null;
 
+  @Index()
   @Column({ type: 'uuid', nullable: true })
   receiverWalletId?: string | null;
 
