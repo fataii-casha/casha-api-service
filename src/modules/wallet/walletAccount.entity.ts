@@ -5,11 +5,13 @@ import {
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import { Wallet } from './wallet.entity';
 
 @Entity({ name: 'wallet_accounts' })
+@Unique('UQ_wallet_accounts_provider_account', ['provider', 'providerAccountId'])
 export class WalletAccount {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

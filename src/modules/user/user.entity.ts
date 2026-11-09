@@ -75,6 +75,20 @@ export class User {
   @Column({ type: 'varchar', length: 4, nullable: true })
   bvnLast4?: string;
 
+  // Full BVN, AES-256-GCM encrypted (utils/crypto). Needed to open the provider bank account.
+  @Column({ type: 'varchar', select: false, nullable: true })
+  bvnEncrypted?: string;
+
+  // Names exactly as they appear on the BVN record, used for the provider bank account.
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  bvnFirstName?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  bvnLastName?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  bvnMiddleName?: string;
+
   @Column({ type: 'smallint', default: 0 })
   kycTier!: number;
 

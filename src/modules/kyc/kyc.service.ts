@@ -5,6 +5,7 @@ import { logger } from '../../config/logger';
 import { dojahIntegration } from '../../integrations/dojah';
 import { nameSimilarity } from '../../utils/levenshtein';
 import { buildSessionResponse } from '../user/account-response';
+import { encrypt } from '../../utils/crypto';
 
 const userRepo = () => AppDataSource.getRepository(User);
 const NAME_MATCH_THRESHOLD = 0.8;
@@ -55,6 +56,10 @@ export async function verifyBvn(input: VerifyBvnInput) {
 
   user.bvnVerified = true;
   user.bvnLast4 = input.bvn.slice(-4);
+  user.bvnEncrypted = encrypt(input.bvn);
+  user.bvnFirstName = entity.first_name;
+  user.bvnLastName = entity.last_name;
+  user.bvnMiddleName = entity.middle_name;
   user.kycTier = Math.max(user.kycTier, 1);
   user.onboardingStep = OnboardingStep.KYC;
 

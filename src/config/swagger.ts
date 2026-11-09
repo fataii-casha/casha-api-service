@@ -218,39 +218,122 @@ const options: swaggerJsdoc.Options = {
           },
         },
 
+        WalletAccount: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            provider: { type: 'string', example: 'stellas' },
+            accountNumber: { type: 'string', example: '9000081483' },
+            accountName: { type: 'string', example: 'Ada Lovelace' },
+            bankName: { type: 'string', example: 'Stellas Microfinance Bank' },
+            bankCode: { type: 'string' },
+            isPrimary: { type: 'boolean', example: true },
+          },
+        },
+
         Wallet: {
           type: 'object',
-
+          description:
+            'Same shape from POST /wallets, GET /wallets/me and GET /dashboard. Balances are kobo.',
           properties: {
-            id: {
-              type: 'string',
-              format: 'uuid',
-            },
-
-            userId: {
-              type: 'string',
-              format: 'uuid',
-            },
-
-            balance: {
+            id: { type: 'string', format: 'uuid' },
+            availableBalance: {
               type: 'integer',
-              description: 'Wallet balance in kobo.',
+              description:
+                'What the user can spend right now: ledgerBalance minus funds on hold for transactions still in progress (e.g. a bank withdrawal awaiting confirmation). Show this as the main balance.',
+              example: 400000,
+            },
+            ledgerBalance: {
+              type: 'integer',
+              description:
+                'Booked balance: every settled transaction. Equal to availableBalance unless something is on hold.',
               example: 500000,
             },
-
-            currency: {
-              type: 'string',
-              example: 'NGN',
+            currency: { type: 'string', example: 'NGN' },
+            status: { type: 'string', enum: ['active', 'suspended', 'closed'], example: 'active' },
+            fundingAccount: {
+              nullable: true,
+              description:
+                'The primary linked account — the account number the user transfers to, to fund the wallet.',
+              allOf: [{ $ref: '#/components/schemas/WalletAccount' }],
             },
-
-            status: {
-              type: 'string',
-              enum: ['active', 'suspended', 'closed'],
-              example: 'active',
+            accounts: {
+              type: 'array',
+              description: 'All bank accounts linked to the wallet.',
+              items: { $ref: '#/components/schemas/WalletAccount' },
             },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
 
-            user: {
-              $ref: '#/components/schemas/User',
+        TransactionView: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            reference: { type: 'string' },
+            type: {
+              type: 'string',
+              enum: ['qr_payment', 'funding', 'withdrawal', 'p2p_transfer', 'reversal'],
+            },
+            direction: {
+              type: 'string',
+              enum: ['credit', 'debit'],
+              description: 'credit = money in for the current user, debit = money out.',
+            },
+            amount: { type: 'integer', description: 'Amount in kobo.', example: 250000 },
+            currency: { type: 'string', example: 'NGN' },
+            status: { type: 'string', enum: ['pending', 'success', 'failed', 'reversed'] },
+            balanceBefore: {
+              type: 'integer',
+              nullable: true,
+              description:
+                "The user's ledger balance (kobo) just before this transaction posted. null while pending, and for failed transactions (nothing moved).",
+              example: 750000,
+            },
+            balanceAfter: {
+              type: 'integer',
+              nullable: true,
+              description:
+                "The user's ledger balance (kobo) just after. Same null rules as balanceBefore.",
+              example: 500000,
+            },
+            narration: { type: 'string', nullable: true },
+            failureReason: { type: 'string', nullable: true },
+            counterparty: {
+              type: 'object',
+              nullable: true,
+              description: 'The other Casha user. null for external funding and withdrawals.',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                name: { type: 'string', example: "Ada's Kitchen" },
+              },
+            },
+            parentTransactionId: {
+              type: 'string',
+              format: 'uuid',
+              nullable: true,
+              description:
+                'For a reversal: the transaction it reverses (which now has status reversed).',
+            },
+            createdAt: { type: 'string', format: 'date-time' },
+            completedAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              description: 'When it reached a final status. null while pending.',
+            },
+          },
+        },
+
+        Dashboard: {
+          type: 'object',
+          properties: {
+            wallet: { $ref: '#/components/schemas/Wallet' },
+            recentTransactions: {
+              type: 'array',
+              description: 'Latest 10 transactions, newest first.',
+              items: { $ref: '#/components/schemas/TransactionView' },
             },
           },
         },
