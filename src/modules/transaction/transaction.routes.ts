@@ -13,9 +13,13 @@ router.use(requireAuth, requireFullAccess);
  * /transactions:
  *   get:
  *     tags: [Transaction]
- *     summary: Paginated transaction history, newest first
- *     description: Every transaction where the user sent or received money, all statuses. direction is relative to the current user.
+ *     summary: Paginated transaction history of one wallet, newest first
+ *     description: Every transaction into or out of the wallet (main by default, or a stash via walletId), all statuses. direction and balanceBefore/After are relative to that wallet. Archived and pending-deletion stashes can still be viewed.
  *     parameters:
+ *       - in: query
+ *         name: walletId
+ *         schema: { type: string, format: uuid }
+ *         description: Defaults to the main wallet. Another user's wallet is a 404.
  *       - in: query
  *         name: page
  *         schema: { type: integer, minimum: 1, default: 1 }

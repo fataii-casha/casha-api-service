@@ -1,6 +1,6 @@
 import { AppDataSource } from '../../config/data-source';
 import { OnboardingStep, User, UserRole } from './user.entity';
-import { Wallet } from '../wallet/wallet.entity';
+import { Wallet, WalletType } from '../wallet/wallet.entity';
 import { Business } from '../merchants/business.entity';
 import { BusinessDocument } from '../merchants/business-document.entity';
 import { getNextStep, getStepRouteHint } from '../auth/onboarding';
@@ -90,7 +90,7 @@ function toOnboardingView(user: User) {
 export async function buildAccountResponse(user: User) {
   const [hasWallet, business] = await Promise.all([
     walletRepo()
-      .count({ where: { userId: user.id } })
+      .count({ where: { userId: user.id, type: WalletType.MAIN } })
       .then((count) => count > 0),
     loadBusinessView(user),
   ]);
