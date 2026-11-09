@@ -1,4 +1,4 @@
-# Casha API: Onboarding & Account Guide (Frontend)
+# Casha API: Onboarding, Account & Dashboard Guide (Frontend)
 
 This guide covers sign-up/login, the onboarding flows for **personal** (consumer) and **merchant** accounts, and the single response shape that every onboarding and profile endpoint returns.
 
@@ -15,7 +15,7 @@ The live, always-current reference is Swagger at **`/api-docs`** on any running 
 | JSON bodies | `Content-Type: application/json` |
 | File uploads | `multipart/form-data`, max **5 MB** per file, **JPG / PNG / WEBP / PDF** only |
 | Uploaded file URLs | Returned as relative paths like `/uploads/171234-abc.png`. Prefix with `{host}` (no `/api/v1`) to display them |
-| Money | Integers in **kobo** (₦1 = 100 kobo). `wallet.balance` comes back as a **string** (bigint); parse it before doing maths |
+| Money | Integers in **kobo** (₦1 = 100 kobo), always JSON **numbers**. Divide by 100 only for display |
 | Rate limit | 300 requests per 15 minutes per IP across `/api` |
 
 ### Envelope
@@ -252,6 +252,18 @@ Map `onboarding.nextStep` → screen:
 
 > Treat `onboarding.isCompleted` as the source of truth for "go to Home". When it's `true`, `nextStep` is `null`.
 
+### 5.4 Going back a step
+
+For the back button on onboarding screens, call `POST /auth/onboarding/back` (no body). The server moves the user back one step and returns the account response with **new tokens**. Swap them in, then route on `onboarding.nextStep` as usual. The old access token still points at the later step, so the screen you go back to would reject it with 403.
+
+Example: a user on the PIN screen (`currentStep: "create_wallet"`, `nextStep: "set_pin"`) taps back. Now `currentStep` is `"kyc"` and `nextStep` is `"create_wallet"`, so show the Create wallet screen.
+
+- **Nothing is deleted.** Re-submitting the step overwrites what was saved, so pre-fill the form from the account response (`user`, `business`).
+- **Creating the wallet again is safe.** `POST /wallets` returns the existing wallet and account number.
+- **BVN locks the earlier steps.** Once `user.bvnVerified` is `true`, the user can't go back past the BVN step: **409** `"Your BVN is verified, so the steps before it can no longer be changed…"`. Hide the back button on the Create wallet screen in that case. Before BVN, everything can be revisited.
+- **400** `"You are already at the first onboarding step"` → the user is on the first screen after phone verification (Personal details or About your business). Hide the back button there.
+- **400** `"Onboarding is already complete"` → finished users can't re-enter onboarding.
+
 ---
 
 ## 6. Endpoint reference
@@ -325,15 +337,37 @@ Single file field **`logo`** (required).
 **200** `"BVN verified successfully"` → account response + tokens. `user.bvnVerified = true`, `user.kycTier ≥ 1`.
 
 ### `POST /wallets`  (both, no body)
+Creates the wallet **and a dedicated bank account number** (a Stellas virtual account) in the user's name. Merchants get it in the owner's name. Users fund their wallet by transferring to this account number.
+
 - **201** `"Wallet created"` / **200** `"Wallet already exists"`.
-- Safe to retry. It never creates a second wallet.
+- Safe to retry. It never creates a second wallet or a second account number.
+- Can take a few seconds (it calls the bank), so show a loading state.
+- **503** `"Banking service is currently unavailable…"` → the bank couldn't create the account. Offer retry.
+- **409** `"We need to re-confirm your BVN…"` → only for accounts that verified BVN before this feature existed. Show the message; support has to resolve it.
 - `data` = account response + tokens **plus** a `wallet` field:
 
 ```jsonc
 {
   "user": { ... }, "business": ..., "onboarding": { ... },
   "accessToken": "…", "refreshToken": "…",
-  "wallet": { "id": "…", "userId": "…", "balance": "0", "currency": "NGN", "status": "active", "createdAt": "…", "updatedAt": "…" }
+  "wallet": {                            // the wallet object, same shape everywhere (§9)
+    "id": "…",
+    "availableBalance": 0,
+    "ledgerBalance": 0,
+    "currency": "NGN",
+    "status": "active",
+    "fundingAccount": {                   // show this on the "Fund your wallet" screen
+      "id": "…",
+      "provider": "stellas",
+      "accountNumber": "9000081483",
+      "accountName": "ADA LOVELACE",
+      "bankName": "Stellas Microfinance Bank",
+      "bankCode": "…",
+      "isPrimary": true
+    },
+    "accounts": [ /* every linked account, fundingAccount included */ ],
+    "createdAt": "…", "updatedAt": "…"
+  }
 }
 ```
 
@@ -371,8 +405,10 @@ Same as `/users/me`. Returns the identical account response.
 | Endpoint | Notes |
 |---|---|
 | `PATCH /auth/pin` | Body `{ currentPin, newPin, confirmNewPin }`. Same PIN rules. New PIN must differ from current. Returns `data: { message }` |
-| `GET /wallets/me` | Wallet with nested `user` |
-| `POST /wallets/mock-fund` | **Dev only.** Body `{ amount }` in kobo |
+| `GET /dashboard` | Home screen: balances, funding account, latest 10 transactions (§9) |
+| `GET /transactions` | Full paginated history (§9) |
+| `GET /wallets/me` | The wallet object alone (§9). Use `/users/me` for profile details |
+| `POST /wallets/mock-fund` | **Dev only, not available in production.** Body `{ amount }`, an integer in kobo. Creates a real `funding` transaction, so it shows in the history |
 
 **PIN lockout:** 5 wrong PIN attempts (shared between change-PIN and payments) lock the PIN for **15 minutes** → **429**.
 
@@ -459,7 +495,104 @@ async function onUnauthorized(failedRequest) {
 
 ---
 
-## 9. Changes from the previous API
+## 9. Dashboard & transaction history
+
+Both endpoints need completed onboarding (`onboarding.isCompleted`). Otherwise they return **403**. Both use the same shape for consumers and merchants.
+
+### `GET /dashboard`
+
+Call this when the home screen opens, and again after the user makes or receives a payment.
+
+#### The two balances
+
+| Field | Meaning | Show it |
+|---|---|---|
+| `availableBalance` | What the user can spend **right now** | As the main balance, and to validate payment amounts |
+| `ledgerBalance` | Booked balance: all settled money, including funds on hold | As a secondary line ("Ledger balance"), only when it differs |
+
+They are equal unless money is **on hold**. For example, during a bank withdrawal of ₦1,000 from ₦5,000, the available balance drops to ₦4,000 straight away while the bank confirms. The ledger balance stays at ₦5,000 until the bank confirms, then drops to ₦4,000. If the bank rejects the transfer, the ₦1,000 comes back to the available balance.
+
+```jsonc
+{
+  "wallet": {
+    "id": "4e1b…",
+    "availableBalance": 400000,           // kobo → ₦4,000.00. The main balance
+    "ledgerBalance": 500000,              // kobo → ₦5,000.00
+    "currency": "NGN",
+    "status": "active",                   // "active" | "suspended" | "closed"
+    "fundingAccount": {                   // null if the account number isn't set up yet
+      "id": "…",
+      "provider": "stellas",
+      "accountNumber": "9000089245",
+      "accountName": "ADA LOVELACE",
+      "bankName": "Stellas Microfinance Bank",
+      "bankCode": "…",
+      "isPrimary": true
+    },
+    "accounts": [ /* every linked account */ ],
+    "createdAt": "…", "updatedAt": "…"
+  },
+  "recentTransactions": [                 // latest 10, newest first, ALL statuses
+    {
+      "id": "3cf3…",
+      "reference": "TXN-…",
+      "type": "qr_payment",               // "qr_payment" | "funding" | "withdrawal" | "p2p_transfer" | "reversal"
+      "direction": "debit",               // "credit" = money in, "debit" = money out, for THIS user
+      "amount": 150000,                   // kobo
+      "currency": "NGN",
+      "status": "success",                // "pending" | "success" | "failed" | "reversed"
+      "balanceBefore": 650000,            // kobo, the user's balance just before. null if pending/failed
+      "balanceAfter": 500000,             // kobo, the user's balance just after. null if pending/failed
+      "narration": "Lunch",               // nullable
+      "failureReason": null,              // set when status is "failed"
+      "counterparty": {                   // the other Casha user; null for bank funding/withdrawals
+        "id": "0f1d…",
+        "name": "Ada's Kitchen"
+      },
+      "parentTransactionId": null,        // for a reversal: the id of the transaction it reverses
+      "createdAt": "2026-11-05T19:14:56.307Z",
+      "completedAt": "2026-11-05T19:14:56.307Z"   // null while pending
+    }
+  ]
+}
+```
+
+Display tips:
+- **Amounts:** `amount` and both balances are always positive and in kobo. Use `direction` for the sign and colour (`+₦1,500.00` vs `-₦1,500.00`).
+- **Balance after:** show `balanceAfter` on each row or on the detail screen ("Balance: ₦5,000.00"). Rows are ordered so each row's `balanceBefore` equals the `balanceAfter` of the row below it. Hide the line when it is `null` (pending or failed).
+- **Title for each row:** `counterparty.name` if present. Otherwise use the type: "Wallet funding" for `funding`, "Withdrawal" for `withdrawal`, "Reversal" for `reversal`. Show `narration` underneath when present (for a reversal it holds the reason).
+- **Status:** show a badge for anything that isn't `success`. Failed rows don't affect the balance. A `pending` withdrawal is already taken out of `availableBalance`.
+- **Reversals:** the original row changes to `status: "reversed"` and a new `reversal` row appears with the opposite `direction`. Its `parentTransactionId` points to the original row.
+- **Ordering:** newest first, by when the transaction affected the balance. A pending withdrawal moves to the top when it completes.
+- **Empty state:** `recentTransactions` is `[]` for a new user. Show the funding account number with a "Fund your wallet" prompt.
+- `wallet.status` other than `active` means the user can't transact. Show a notice.
+
+### `GET /transactions?page=1&limit=20`
+
+The "See all" screen. Items use exactly the same shape as `recentTransactions`.
+
+| Query | Default | Rules |
+|---|---|---|
+| `page` | 1 | integer ≥ 1 |
+| `limit` | 20 | integer 1–100 (more → 400 `"Validation failed"`) |
+
+```jsonc
+{
+  "items": [ /* same as recentTransactions */ ],
+  "total": 42,
+  "page": 1,
+  "limit": 20,
+  "totalPages": 3
+}
+```
+
+For infinite scroll, load `page + 1` until `page === totalPages`. A `page` beyond the last one returns an empty `items` array, not an error.
+
+> **Note:** real bank funding (transfers to the account number) and QR payments aren't recorded yet. In development, use `POST /wallets/mock-fund` to create transactions to build against. The shape above is final.
+
+---
+
+## 10. Changes from the previous API
 
 If you built against an earlier version:
 
@@ -478,3 +611,11 @@ If you built against an earlier version:
 | No way to refresh tokens | `POST /auth/refresh` |
 | Bad uploads returned 500 | 400 with a clear `message` |
 | Rate-limit 429 was plain text | JSON envelope |
+| Wallet had no account number | `wallet.accounts[]` holds the funding account number |
+| No dashboard or history endpoints | `GET /dashboard`, `GET /transactions` |
+| No way to go back during onboarding | `POST /auth/onboarding/back` (§5.4) |
+| `wallet.balance` (a string from `/wallets/*`, a number from `/dashboard`) | `wallet.availableBalance` + `wallet.ledgerBalance`, numbers everywhere |
+| `GET /wallets/me` nested the `user` and had a `userId` | Wallet object only (use `/users/me` for the profile); adds `fundingAccount` |
+| `/dashboard` `fundingAccount` had 3 fields | Full linked-account object (`id`, `provider`, `bankCode`, `isPrimary` added) |
+| Transaction `amount` could be up to ~₦21M | No practical limit |
+| — | Transactions have `balanceBefore`, `balanceAfter`, `parentTransactionId`, `completedAt` and the new `reversal` type |

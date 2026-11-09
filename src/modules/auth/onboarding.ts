@@ -36,6 +36,29 @@ export function getNextStep(currentStep: OnboardingStep, role?: UserRole): Onboa
   return order[index + 1];
 }
 
+/**
+ * The step to return to when the user goes back. Stored steps are "last completed", so going
+ * back from create_wallet returns to kyc, whose next action is creating the wallet again.
+ * set_pin is never stored, so it is skipped.
+ */
+export function getPreviousStep(
+  currentStep: OnboardingStep,
+  role?: UserRole,
+): OnboardingStep | null {
+  const order: OnboardingStep[] = getOrderForRole(role).filter(
+    (step) => step !== OnboardingStep.PIN,
+  );
+  const index = order.indexOf(currentStep);
+  if (index <= 0) return null;
+  return order[index - 1];
+}
+
+/** True if `step` comes before `other` in the role's onboarding order. */
+export function isStepBefore(step: OnboardingStep, other: OnboardingStep, role?: UserRole) {
+  const order = getOrderForRole(role);
+  return order.indexOf(step) < order.indexOf(other);
+}
+
 export function getStepRouteHint(step: OnboardingStep, role?: UserRole): string | null {
   const isMerchant = role === UserRole.MERCHANT;
 

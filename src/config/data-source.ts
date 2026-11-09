@@ -8,6 +8,7 @@ import { QrCode } from '../modules/qr/qr.entity';
 import { Transaction } from '../modules/transaction/transaction.entity';
 import { Business } from '../modules/merchants/business.entity';
 import { BusinessDocument } from '../modules/merchants/business-document.entity';
+import { LedgerEntry } from '../modules/ledger/ledger-entry.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -16,7 +17,16 @@ export const AppDataSource = new DataSource({
   username: env.dbUser,
   password: env.dbPassword,
   database: env.dbName,
-  entities: [User, Wallet, WalletAccount, Business, BusinessDocument, QrCode, Transaction],
+  entities: [
+    User,
+    Wallet,
+    WalletAccount,
+    Business,
+    BusinessDocument,
+    QrCode,
+    Transaction,
+    LedgerEntry,
+  ],
   migrations: ['src/migrations/*.ts'],
   // synchronize is convenient for early local dev but unsafe past that — switch to
   // migrations (see the scripts below) once the schema stabilizes.

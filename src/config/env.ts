@@ -24,6 +24,15 @@ export const env = {
   dojahBaseUrl: process.env.DOJAH_BASE_URL ?? 'https://api.dojah.io',
   dojahAppId: required('DOJAH_APPID'),
   dojahSecretKey: required('DOJAH_SECRET_KEY'),
+  // Optional so the app boots without them; the Stellas client fails at call time instead.
+  stellasBaseUrl: process.env.STELLAS_BASE_URL ?? 'https://sandbox.stellasbank.com/api/v1',
+  stellasApiKey: process.env.STELLAS_API_KEY,
+  stellasApiSecret: process.env.STELLAS_API_SECRET,
+  stellasBusinessId: process.env.STELLAS_BUSINESS_ID,
+  stellasBankName: process.env.STELLAS_BANK_NAME ?? 'Stellas Microfinance Bank',
+  stellasBankCode: process.env.STELLAS_BANK_CODE ?? '',
+  // 32-byte key, base64. Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  dataEncryptionKey: process.env.DATA_ENCRYPTION_KEY ?? '',
   jwtAccessSecret: required('JWT_ACCESS_SECRET', 'dev-access-secret-change-me'),
   jwtRefreshSecret: required('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
@@ -39,6 +48,10 @@ export const env = {
 } as const;
 
 export const isProd = env.nodeEnv === 'production';
+
+if (Buffer.from(env.dataEncryptionKey, 'base64').length !== 32) {
+  throw new Error('DATA_ENCRYPTION_KEY must be set to a base64-encoded 32-byte key');
+}
 
 if (env.fixedOtp) {
   if (isProd) {

@@ -5,6 +5,7 @@ import { issueOtp, verifyOtp } from './otp.service';
 import { ApiError } from '../../utils/api-error';
 import { buildSessionResponse } from '../user/account-response';
 import { verifyRefreshToken } from '../../utils/jwt';
+import { getPreviousStep, isStepBefore } from './onboarding';
 import { SetPersonalDetailsInput, SetPinInput } from './interfaces/auth.types';
 import bcrypt from 'bcryptjs';
 
@@ -85,6 +86,40 @@ export async function refreshSession(refreshToken: string) {
   if (!user.isActive) {
     throw ApiError.forbidden('This account has been deactivated. Contact support.');
   }
+
+  return buildSessionResponse(user);
+}
+
+/**
+ * Moves the user back one onboarding step so they can redo it, and issues tokens for the new
+ * step. Data already submitted is kept; re-submitting the step overwrites it.
+ *
+ * Not allowed once onboarding is complete, or past BVN verification: a verified BVN can't be
+ * re-verified, and the details before it (name, DOB) were checked against it.
+ */
+export async function goBackOnboardingStep(userId: string) {
+  const user = await userRepo().findOne({ where: { id: userId } });
+  if (!user) {
+    throw ApiError.notFound('User not found');
+  }
+
+  if (user.onboardingStep === OnboardingStep.COMPLETED) {
+    throw ApiError.badRequest('Onboarding is already complete');
+  }
+
+  const previousStep = getPreviousStep(user.onboardingStep, user.role);
+  if (!previousStep) {
+    throw ApiError.badRequest('You are already at the first onboarding step');
+  }
+
+  if (user.bvnVerified && isStepBefore(previousStep, OnboardingStep.KYC, user.role)) {
+    throw ApiError.conflict(
+      'Your BVN is verified, so the steps before it can no longer be changed. Contact support if your details are wrong.',
+    );
+  }
+
+  user.onboardingStep = previousStep;
+  await userRepo().save(user);
 
   return buildSessionResponse(user);
 }

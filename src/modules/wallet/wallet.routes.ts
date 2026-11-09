@@ -4,6 +4,7 @@ import { validate } from '../../middlewares/validate';
 import { mockFundSchema } from './wallet.validation';
 import * as walletController from './wallet.controller';
 import { OnboardingStep } from '../user/user.entity';
+import { isProd } from '../../config/env';
 
 const router = Router();
 
@@ -64,10 +65,10 @@ router.post(
  * /wallets/me:
  *   get:
  *     tags: [Wallet]
- *     summary: Get the current user's wallet, including their profile details
+ *     summary: Get the current user's wallet (available + ledger balance, linked accounts)
  *     responses:
  *       200:
- *         description: Wallet fetched, with nested user
+ *         description: Wallet fetched
  *         content:
  *           application/json:
  *             schema:
@@ -89,7 +90,8 @@ router.get('/me', walletController.getMyWallet);
  * /wallets/mock-fund:
  *   post:
  *     tags: [Wallet]
- *     summary: Dev-only wallet top-up (until a PSP is wired in)
+ *     summary: Dev-only wallet top-up (not registered in production)
+ *     description: Posts a real funding transaction through the ledger, so it appears in the history with balance before/after.
  *     requestBody:
  *       required: true
  *       content:
@@ -116,6 +118,9 @@ router.get('/me', walletController.getMyWallet);
  *           application/json:
  *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
  */
-router.post('/mock-fund', validate(mockFundSchema), walletController.mockFund);
+// Creates money out of thin air, so it never exists in production.
+if (!isProd) {
+  router.post('/mock-fund', validate(mockFundSchema), walletController.mockFund);
+}
 
 export default router;

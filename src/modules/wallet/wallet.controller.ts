@@ -4,18 +4,23 @@ import * as walletService from './wallet.service';
 import { buildSessionResponse } from '../user/account-response';
 
 export async function getMyWallet(req: Request, res: Response) {
-  const wallet = await walletService.getWalletWithUserByUserId(req.user!.id);
-  return sendSuccess(res, wallet, 'Wallet fetched');
+  const wallet = await walletService.getWalletWithAccountsByUserId(req.user!.id);
+  return sendSuccess(res, walletService.toWalletView(wallet), 'Wallet fetched');
 }
 
 export async function create(req: Request, res: Response) {
   const { user, wallet, created } = await walletService.createWalletForUser(req.user!.id);
   const message = created ? 'Wallet created' : 'Wallet already exists';
   const session = await buildSessionResponse(user);
-  return sendSuccess(res, { ...session, wallet }, message, created ? 201 : 200);
+  return sendSuccess(
+    res,
+    { ...session, wallet: walletService.toWalletView(wallet) },
+    message,
+    created ? 201 : 200,
+  );
 }
 
 export async function mockFund(req: Request, res: Response) {
   const wallet = await walletService.mockFundWallet(req.user!.id, req.body.amount);
-  return sendSuccess(res, wallet, 'Wallet funded (mock)');
+  return sendSuccess(res, walletService.toWalletView(wallet), 'Wallet funded (mock)');
 }

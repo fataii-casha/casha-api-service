@@ -186,6 +186,41 @@ router.patch(
 
 /**
  * @openapi
+ * /auth/onboarding/back:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Go back to the previous onboarding step
+ *     description: >-
+ *       Moves onboarding.currentStep back one step (e.g. create_wallet → kyc, whose nextStep is
+ *       create_wallet again) and returns the session response with a new token pair — use the new
+ *       accessToken, the old one is still scoped to the later step. No body. Submitted data is kept;
+ *       re-submitting the step overwrites it. Same for consumers and merchants.
+ *     responses:
+ *       200:
+ *         description: Moved back
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - type: object
+ *                   properties: { success: { type: boolean }, message: { type: string } }
+ *                 - type: object
+ *                   properties: { data: { $ref: '#/components/schemas/SessionResponse' } }
+ *       400:
+ *         description: Onboarding already complete, or already at the first step
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ *       409:
+ *         description: BVN already verified — steps before kyc can't be revisited
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/ApiErrorResponse' }
+ */
+router.post('/onboarding/back', requireAuth, authController.goBackOnboardingStep);
+
+/**
+ * @openapi
  * /auth/security-questions:
  *   get:
  *     tags: [Auth]

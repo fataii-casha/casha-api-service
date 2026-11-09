@@ -10,7 +10,7 @@ const walletRepo = () => AppDataSource.getRepository(Wallet);
 const businessRepo = () => AppDataSource.getRepository(Business);
 const documentRepo = () => AppDataSource.getRepository(BusinessDocument);
 
-function buildDisplayName(user: User): string {
+export function buildDisplayName(user: User): string {
   if (user.role === UserRole.MERCHANT && user.businessName) {
     return user.businessName;
   }

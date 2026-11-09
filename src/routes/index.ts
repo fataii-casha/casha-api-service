@@ -5,6 +5,8 @@ import kycRoutes from '../modules/kyc/kyc.routes';
 import * as healthController from '../modules/health/health.controller';
 import userRoutes from '../modules/user/user.routes';
 import merchantRoutes from '../modules/merchants/merchant.routes';
+import dashboardRoutes from '../modules/dashboard/dashboard.routes';
+import transactionRoutes from '../modules/transaction/transaction.routes';
 
 const router = Router();
 
@@ -58,7 +60,8 @@ router.use('/kyc', kycRoutes);
 router.use('/wallets', walletRoutes);
 router.use('/users', userRoutes);
 router.use('/merchants', merchantRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/transactions', transactionRoutes);
 // router.use('/qr', qrRoutes);
-// router.use('/transactions', transactionRoutes);
 
 export default router;

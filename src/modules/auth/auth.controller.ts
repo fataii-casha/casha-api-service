@@ -23,6 +23,11 @@ export async function refresh(req: Request, res: Response) {
   return sendSuccess(res, result, 'Session refreshed');
 }
 
+export async function goBackOnboardingStep(req: Request, res: Response) {
+  const result = await authService.goBackOnboardingStep(req.user!.id);
+  return sendSuccess(res, result, 'Moved back to the previous onboarding step');
+}
+
 export async function setPersonalDetails(req: Request, res: Response) {
   const result = await authService.setPersonalDetails({
     userId: req.user!.id,
