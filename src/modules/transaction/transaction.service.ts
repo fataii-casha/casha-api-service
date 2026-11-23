@@ -90,6 +90,7 @@ async function toTransactionViews(transactions: Transaction[], walletId: string)
       type: tx.type,
       direction: isCredit ? ('credit' as const) : ('debit' as const),
       amount: Number(tx.amount),
+      fee: Number(tx.fee ?? 0), // charged on top of amount; balanceAfter includes it
       currency: tx.currency,
       status: tx.status,
       balanceBefore: entry?.balanceBefore != null ? Number(entry.balanceBefore) : null,
@@ -97,6 +98,11 @@ async function toTransactionViews(transactions: Transaction[], walletId: string)
       narration: tx.narration ?? null,
       failureReason: tx.failureReason ?? null,
       counterparty,
+      /** Bank transfers: the receiving bank account. */
+      beneficiary:
+        tx.type === 'withdrawal' && tx.metadata?.beneficiary
+          ? (tx.metadata.beneficiary as Record<string, unknown>)
+          : null,
       walletId,
       parentTransactionId: tx.parentTransactionId ?? null,
       createdAt: tx.createdAt,

@@ -5,8 +5,10 @@ import { connectRedis, disconnectRedis } from './config/redis';
 import { env } from './config/env';
 import { logger } from './config/logger';
 import { finalizeDueStashDeletions } from './modules/wallet/stash.service';
+import { reportStuckBankTransfers } from './modules/transfer/bank-transfer.service';
 
 const STASH_DELETION_CHECK_MS = 60 * 60 * 1000; // hourly
+const STUCK_TRANSFER_CHECK_MS = 15 * 60 * 1000;
 
 async function main() {
   await connectDB();
@@ -28,9 +30,20 @@ async function main() {
   const stashDeletionTimer = setInterval(runStashDeletions, STASH_DELETION_CHECK_MS);
   stashDeletionTimer.unref();
 
+  // Bank transfers still pending after 15 minutes need a human (until requery is wired in).
+  const stuckTransferTimer = setInterval(
+    () =>
+      reportStuckBankTransfers().catch((err) =>
+        logger.error({ err }, 'Checking for stuck bank transfers failed'),
+      ),
+    STUCK_TRANSFER_CHECK_MS,
+  );
+  stuckTransferTimer.unref();
+
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down gracefully...`);
     clearInterval(stashDeletionTimer);
+    clearInterval(stuckTransferTimer);
     server.close(async () => {
       await disconnectDB();
       await disconnectRedis();

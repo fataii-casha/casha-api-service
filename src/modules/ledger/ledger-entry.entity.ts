@@ -23,6 +23,8 @@ export enum EntryDirection {
  */
 export enum SystemAccount {
   BANK_SETTLEMENT = 'bank_settlement',
+  /** Casha's fee revenue (net of what the provider charged us for the same transaction). */
+  FEE_INCOME = 'fee_income',
 }
 
 /**

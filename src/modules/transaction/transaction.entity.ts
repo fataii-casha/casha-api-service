@@ -50,6 +50,10 @@ export class Transaction {
   @Column({ type: 'bigint' })
   amount!: string;
 
+  /** Casha's fee in kobo, charged on top of amount (bank transfers). */
+  @Column({ type: 'bigint', default: 0 })
+  fee!: string;
+
   @Column({ type: 'varchar', default: 'NGN' })
   currency!: string;
 

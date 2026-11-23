@@ -349,6 +349,27 @@ const options: swaggerJsdoc.Options = {
                 name: { type: 'string', example: "Ada's Kitchen" },
               },
             },
+            fee: {
+              type: 'integer',
+              description:
+                'Kobo charged on top of amount (bank transfers). balanceAfter already includes it.',
+              example: 1000,
+            },
+            beneficiary: {
+              type: 'object',
+              nullable: true,
+              description: 'Bank transfers only: the receiving account.',
+              properties: {
+                accountNumber: { type: 'string', example: '0123456789' },
+                bankCode: { type: 'string', example: '000014' },
+                bankName: { type: 'string', example: 'Access Bank' },
+                accountName: {
+                  type: 'string',
+                  nullable: true,
+                  description: 'Set once name enquiry is available',
+                },
+              },
+            },
             walletId: {
               type: 'string',
               format: 'uuid',
@@ -369,6 +390,30 @@ const options: swaggerJsdoc.Options = {
               nullable: true,
               description: 'When it reached a final status. null while pending.',
             },
+          },
+        },
+
+        BankTransferResult: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['success', 'pending', 'failed'],
+              description:
+                'pending = processing at the bank; amount + fee stay held until it resolves.',
+            },
+            transaction: { $ref: '#/components/schemas/TransactionView' },
+            wallet: { $ref: '#/components/schemas/Wallet' },
+          },
+        },
+
+        TransferRecipient: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid', description: 'Send this as recipientId' },
+            name: { type: 'string', example: 'Ada Obi' },
+            accountType: { type: 'string', enum: ['consumer', 'merchant'] },
+            phone: { type: 'string', example: '+234803****567', description: 'Masked' },
           },
         },
 

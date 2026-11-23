@@ -31,6 +31,9 @@ export const env = {
   stellasBusinessId: process.env.STELLAS_BUSINESS_ID,
   stellasBankName: process.env.STELLAS_BANK_NAME ?? 'Stellas Microfinance Bank',
   stellasBankCode: process.env.STELLAS_BANK_CODE ?? '',
+  // Unit Stellas amounts are in. Sandbox evidence (a ₦10 NIP charge returned as 1000) says kobo.
+  // TODO: confirm with Stellas before production — the wrong unit moves 100× the money.
+  stellasAmountUnit: (process.env.STELLAS_AMOUNT_UNIT ?? 'kobo') as 'kobo' | 'naira',
   // 32-byte key, base64. Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
   dataEncryptionKey: process.env.DATA_ENCRYPTION_KEY ?? '',
   jwtAccessSecret: required('JWT_ACCESS_SECRET', 'dev-access-secret-change-me'),
@@ -60,4 +63,8 @@ if (env.fixedOtp) {
   if (!/^\d{6}$/.test(env.fixedOtp)) {
     throw new Error('FIXED_OTP must be exactly 6 digits');
   }
+}
+
+if (!['kobo', 'naira'].includes(env.stellasAmountUnit)) {
+  throw new Error('STELLAS_AMOUNT_UNIT must be "kobo" or "naira"');
 }

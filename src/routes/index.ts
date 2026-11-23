@@ -7,6 +7,7 @@ import userRoutes from '../modules/user/user.routes';
 import merchantRoutes from '../modules/merchants/merchant.routes';
 import dashboardRoutes from '../modules/dashboard/dashboard.routes';
 import transactionRoutes from '../modules/transaction/transaction.routes';
+import transferRoutes from '../modules/transfer/transfer.routes';
 
 const router = Router();
 
@@ -62,6 +63,7 @@ router.use('/users', userRoutes);
 router.use('/merchants', merchantRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/transactions', transactionRoutes);
+router.use('/transfers', transferRoutes);
 // router.use('/qr', qrRoutes);
 
 export default router;

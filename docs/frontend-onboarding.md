@@ -409,9 +409,11 @@ Same as `/users/me`. Returns the identical account response.
 | `GET /transactions?walletId=` | Full paginated history of one wallet (§9) |
 | `GET /wallets/me` | The main wallet object (§9). Use `/users/me` for profile details |
 | `/wallets…` stash endpoints | Create, rename, archive, delete and restore stashes, and move money between wallets (§10) |
+| `GET /transfers/recipient`, `POST /transfers` | Send money to another Casha user (§11) |
+| `GET /transfers/banks`, `POST /transfers/bank` | Send money to another bank (§12) |
 | `POST /wallets/mock-fund` | **Dev only, not available in production.** Body `{ amount }`, an integer in kobo. Creates a real `funding` transaction, so it shows in the history |
 
-**PIN lockout:** 5 wrong PIN attempts (shared between change-PIN and payments) lock the PIN for **15 minutes** → **429**.
+**PIN lockout:** 5 wrong PIN attempts (shared between change-PIN and transfers) lock the PIN for **15 minutes** → **429**.
 
 ---
 
@@ -663,11 +665,165 @@ Notes:
 
 ### Spending from a stash
 
-A stash can pay like the main wallet. Payment endpoints (QR, transfers to other users) will take the paying wallet's id, defaulting to main, so pass the active wallet. Funding from the bank always lands in the main wallet.
+A stash can pay like the main wallet. `POST /transfers` (§11) takes `fromWalletId`, defaulting to main, so pass the active wallet. QR payments will work the same way. Money received from the bank or from other users always lands in the main wallet.
 
 ---
 
-## 11. Changes from the previous API
+## 11. Sending money to other Casha users
+
+Instant and free. Two steps: **look up** the recipient, so the user can confirm the name, then **send** with the PIN. Both need completed onboarding.
+
+### Step 1: `GET /transfers/recipient?phone=…` or `?accountNumber=…`
+
+Send **exactly one** of:
+- `phone`: any common format (`08031234567`, `+2348031234567`, …)
+- `accountNumber`: the recipient's 10-digit Casha account number (their `fundingAccount.accountNumber`)
+
+```json
+{ "id": "8a95…", "name": "Bola Ade", "accountType": "consumer", "phone": "+234803****701" }
+```
+
+Show `name` (and the masked `phone`) on the confirm screen and keep `id` for step 2. For "send again", you can also use the `counterparty.id` of a past `p2p_transfer` (`kind: "user"`).
+
+| Status | Meaning |
+|---|---|
+| 404 `"No Casha account found for these details"` | No such account, or it can't receive money. Deliberately the same message either way |
+| 400 `"That's your own account…"` | Suggest a wallet transfer (§10) instead |
+| 400 `"Enter a valid Nigerian phone number"` / `"Validation failed"` | Bad input |
+| 429 `"Too many recipient lookups…"` | 30 lookups per 15 minutes per user. Don't look up on every keystroke; wait for a complete number |
+
+### Step 2: `POST /transfers`
+
+```json
+{
+  "recipientId": "8a95…",
+  "amount": 250000,
+  "pin": "5170",
+  "idempotencyKey": "3f1c2b9e-send-0001",
+  "narration": "Lunch money",
+  "fromWalletId": "…"
+}
+```
+
+| Field | Rules |
+|---|---|
+| `recipientId` | `id` from step 1 |
+| `amount` | Kobo, a whole number |
+| `pin` | 4 digits. Never store or log it |
+| `idempotencyKey` | **Required.** 8–64 chars (letters, digits, `-`, `_`). Generate one when the user opens the confirm screen, and **reuse it on every retry** of that transfer (timeouts, network drops). A repeat returns **200** `"Transfer already processed"` with the original transaction, never a second debit. Make a new one for each new transfer |
+| `narration` | Optional, ≤ 100 chars. The recipient sees it. Line breaks and invisible characters are cleaned up |
+| `fromWalletId` | Optional: the active wallet (main or a stash). Default main |
+
+**201** `"Transfer successful"`:
+```jsonc
+{
+  "transaction": { /* §9 shape, seen from the sending wallet: direction "debit", balanceBefore/After */ },
+  "wallet": { /* the sending wallet, updated balances */ },
+  "recipient": { "id": "8a95…", "name": "Bola Ade", "accountType": "consumer", "phone": "+234803****701" }
+}
+```
+Show a success screen from this, then refresh the dashboard. The money is in the recipient's main wallet immediately. They see a `credit` row with your name as `counterparty`.
+
+### Errors
+
+400s from the checks below carry `details.code`. Switch on the code, not the message, and show the message.
+
+| Status | `details.code` / message | What to do |
+|---|---|---|
+| 400 | `INCORRECT_PIN` | "Incorrect PIN", let them retry |
+| 429 | `"Too many incorrect PIN attempts. Try again in N minutes."` | 5 wrong PINs lock **all** PIN actions for 15 minutes. Offer "Forgot PIN?" |
+| 400 | `AMOUNT_TOO_SMALL` (`details.minAmount`) | Minimum is ₦10 |
+| 400 | `SINGLE_LIMIT_EXCEEDED` (`details.singleMax`) | Over the per-transfer limit for their KYC tier |
+| 400 | `DAILY_LIMIT_EXCEEDED` (`details.dailyMax`, `details.remaining`) | Over today's limit. Show `remaining`. Resets at midnight Lagos time |
+| 400 | `RECIPIENT_LIMIT_EXCEEDED` | The recipient's account can't hold that much. Suggest a smaller amount. We don't say why |
+| 400 | `"Insufficient balance"` | Not enough available balance in the sending wallet |
+| 400 | `"… is archived…"` | The sending stash is archived |
+| 400 | `"You can't send money to yourself…"` | Use a wallet transfer |
+| 403 | `"Your account is restricted…"` | The sender's account is deactivated. Show support contact |
+| 404 | `"No Casha account found…"` | The recipient can no longer receive. Restart from step 1 |
+| 409 | `"This idempotency key was already used for a different transaction"` | You reused a key for a different transfer. That's a client bug: make a new key |
+| 429 | `"Too many transfers in a short time…"` | Max 10 attempts a minute |
+| 429 | `"Another payment is being processed…"` | A PIN check for this user was already running. Retry with the same key |
+
+**Limits by KYC tier** (to be confirmed by compliance; use the error `details` rather than hard-coding them):
+
+| | Per transfer | Per day | Max account balance |
+|---|---|---|---|
+| Tier 1 | ₦50,000 | ₦50,000 | ₦300,000 |
+| Tier 2 | ₦100,000 | ₦200,000 | ₦500,000 |
+| Tier 3 | ₦5,000,000 | ₦5,000,000 | none |
+| Merchants | ₦5,000,000 | ₦10,000,000 | none |
+
+The daily limit counts transfers to other users and to banks (and, later, QR payments) from all of a user's wallets. Moving money between your own wallets doesn't count.
+
+---
+
+## 12. Sending money to other banks (NIP)
+
+Sends from the user's Casha account to any Nigerian bank account. A fee applies. Interbank transfers can take a moment to confirm, so the response may say **processing**.
+
+> **Not yet:** the account-name check (showing "ADA OBI" before sending) is waiting on Stellas' name-enquiry endpoint. Until then, show the account number and bank clearly on the confirm screen. A field for the name is already in the response (`beneficiary.accountName`, `null` for now).
+
+### Step 1: `GET /transfers/banks`
+
+```json
+[ { "name": "Access Bank", "bankCode": "000014" }, … ]
+```
+Sorted by name. Cache it in the app for the session and send `bankCode` in step 3.
+
+### Step 2: `GET /transfers/bank/fee?amount=250000`
+
+```json
+{ "amount": 250000, "fee": 1000, "total": 251000 }
+```
+Show "Fee ₦10 · Total ₦2,510" on the confirm screen. Fees: **₦10** up to ₦5,000, **₦25** up to ₦50,000, **₦50** above. The fee comes on top of `amount`, so the user needs `amount + fee` available.
+
+### Step 3: `POST /transfers/bank`
+
+```json
+{
+  "accountNumber": "0123456789",
+  "bankCode": "000014",
+  "amount": 250000,
+  "pin": "5170",
+  "idempotencyKey": "9b2e4c1a-bank-0001",
+  "narration": "Rent for May",
+  "fromWalletId": "…"
+}
+```
+
+The rules are as in §11: a 10-digit `accountNumber`, `amount` in kobo **excluding** the fee, a 4-digit `pin`, and a **required** `idempotencyKey` reused on retries. `narration` is optional and shows on the recipient's bank statement; it defaults to "Transfer from {name} via Casha". `fromWalletId` is optional and defaults to main.
+
+**The response depends on what the bank said:**
+
+| Status | `data.status` | Meaning | Show |
+|---|---|---|---|
+| **201** `"Transfer successful"` | `success` | Done | Success screen |
+| **202** `"Transfer is processing…"` | `pending` | Sent to the bank and waiting for confirmation. `amount + fee` is **held**: `availableBalance` dropped, `ledgerBalance` hasn't yet | "Processing" screen. The transaction moves to `success` or `failed` later. A failed one gives back amount + fee |
+| **200** `"Transfer already submitted: …"` | any | A retry with the same key. **Nothing was sent again.** | Use `data.status` as above |
+
+`data` is `{ status, transaction, wallet }`. The `transaction` is the §9 shape with `type: "withdrawal"`, `fee`, and `beneficiary: { accountNumber, bankCode, bankName, accountName }`. Bank transfers show in history the same way. Title them "To {bankName} • {accountNumber}" and show `fee` on the detail screen. `balanceAfter` already includes the fee.
+
+**Don't retry with a new key after a timeout or a 202.** A new key is a new transfer and could pay twice. Retry with the **same** key, or refresh the transaction from the history.
+
+### Errors
+
+Everything from §11 applies (`INCORRECT_PIN`, PIN lock, `AMOUNT_TOO_SMALL`, `SINGLE_LIMIT_EXCEEDED`, `DAILY_LIMIT_EXCEEDED`, restricted account, idempotency 409). Bank transfers and Casha transfers share the **same daily limit**. Also:
+
+| Status | `details.code` / message | What to do |
+|---|---|---|
+| 400 | `UNKNOWN_BANK` | Bank code not in the list. Refresh `/transfers/banks` |
+| 400 | `CASHA_ACCOUNT` (`details.recipientId`) | That account number is a Casha account. Offer to send it as a free Casha transfer (§11) with `recipientId` |
+| 400 | `OWN_ACCOUNT` | That's the user's own Casha account number |
+| 400 | `"Insufficient balance"` | `amount + fee` is more than the available balance |
+| 400 | `TRANSFER_FAILED` (`details.transaction`) | The bank rejected it. **The user wasn't charged**; amount and fee are back. Show the message |
+| 409 | `"Your Casha account number isn't ready yet…"` | The user has no Stellas account yet. Contact support |
+| 429 | `"Too many bank transfers in a short time…"` | Max 5 a minute |
+| 503 | `"Banking service is currently unavailable…"` | Nothing was sent and nothing was charged. Safe to retry (same key) |
+
+---
+
+## 13. Changes from the previous API
 
 If you built against an earlier version:
 
@@ -691,6 +847,9 @@ If you built against an earlier version:
 | No way to go back during onboarding | `POST /auth/onboarding/back` (§5.4) |
 | One wallet per user | Main wallet + stashes (§10). Wallet objects gained `type`, `name`, `color`, `icon`, `isArchived`, `archivedAt`, `deletionScheduledAt` |
 | `/dashboard` and `/transactions` covered the user's whole account | Per wallet: `?walletId=`, default main. `/dashboard` adds `wallets` and `totalAvailableBalance` |
+| No way to pay another user | `GET /transfers/recipient` + `POST /transfers` (§11) |
+| No bank transfers | `GET /transfers/banks`, `GET /transfers/bank/fee`, `POST /transfers/bank` (§12) |
+| — | Transactions have `fee` and `beneficiary` (bank transfers) |
 | `counterparty` was `{ id, name }` (always a user) | `{ kind: "user" \| "wallet", id, name }`. Transactions also carry `walletId` |
 | `wallet.balance` (a string from `/wallets/*`, a number from `/dashboard`) | `wallet.availableBalance` + `wallet.ledgerBalance`, numbers everywhere |
 | `GET /wallets/me` nested the `user` and had a `userId` | Wallet object only (use `/users/me` for the profile); adds `fundingAccount` |

@@ -35,10 +35,26 @@ export interface TransferInput extends PostingInput {
   qrCodeId?: string;
   /** Only for emptying a stash that is being deleted — archived stashes are otherwise frozen. */
   allowArchivedSource?: boolean;
+  /**
+   * Hooks that run inside the posting's DB transaction. beforeLock runs first, so take any
+   * extra locks there (e.g. the sender's user row, to serialise their daily-limit checks);
+   * guard runs once both wallets are locked and can reject the posting against balances
+   * that can't change underneath it. Neither runs for a duplicate reference.
+   */
+  beforeLock?: (manager: EntityManager) => Promise<void>;
+  guard?: (manager: EntityManager, wallets: { from: Wallet; to: Wallet }) => Promise<void>;
 }
 
 export interface BankMovementInput extends PostingInput {
   walletId: string;
+}
+
+export interface BankDebitInput extends BankMovementInput {
+  /** Casha's fee in kobo, held and debited on top of amount. */
+  fee?: number;
+  /** Same contract as TransferInput.beforeLock / guard. */
+  beforeLock?: (manager: EntityManager) => Promise<void>;
+  guard?: (manager: EntityManager, wallet: Wallet) => Promise<void>;
 }
 
 export interface PostingResult {
@@ -76,7 +92,8 @@ async function postOnce(
   const findExisting = async (manager: EntityManager) => {
     const existing = await manager.findOne(Transaction, { where: { reference } });
     if (existing && (existing.type !== type || existing.amount !== amount.toString())) {
-      throw ApiError.conflict(`Reference ${reference} is already used by a different transaction`);
+      // Callers' idempotency keys become references, so keep the message about the key.
+      throw ApiError.conflict('This idempotency key was already used for a different transaction');
     }
     return existing;
   };
@@ -226,6 +243,7 @@ export async function transferBetweenWallets(input: TransferInput): Promise<Post
   }
 
   return postOnce(input.reference, input.type, amount, async (manager) => {
+    await input.beforeLock?.(manager);
     const wallets = await lockWallets(manager, [input.fromWalletId, input.toWalletId]);
     const from = wallets.get(input.fromWalletId)!;
     const to = wallets.get(input.toWalletId)!;
@@ -235,9 +253,13 @@ export async function transferBetweenWallets(input: TransferInput): Promise<Post
     if (input.type === 'wallet_transfer' && from.userId !== to.userId) {
       throw ApiError.badRequest('Wallet transfers are only between your own wallets');
     }
+    if (input.type === 'p2p_transfer' && from.userId === to.userId) {
+      throw ApiError.badRequest('Use a wallet transfer to move money between your own wallets');
+    }
     if (from.currency !== to.currency) {
       throw ApiError.badRequest('Wallets use different currencies');
     }
+    await input.guard?.(manager, { from, to });
 
     const transaction = await createTransaction(manager, {
       reference: input.reference,
@@ -295,21 +317,25 @@ export async function creditWalletFromBank(input: BankMovementInput): Promise<Po
 }
 
 /**
- * First half of a bank withdrawal: puts the amount on hold (available balance drops, ledger
+ * First half of a bank withdrawal: puts amount + fee on hold (available balance drops, ledger
  * balance doesn't) and returns a pending transaction. Call settleHold or releaseHold once
  * the bank confirms or rejects the transfer.
  */
-export async function holdForBankDebit(input: BankMovementInput): Promise<PostingResult> {
+export async function holdForBankDebit(input: BankDebitInput): Promise<PostingResult> {
   const amount = toKobo(input.amount);
+  const fee = input.fee ? toKobo(input.fee) : 0n;
 
   return postOnce(input.reference, 'withdrawal', amount, async (manager) => {
+    await input.beforeLock?.(manager);
     const wallet = (await lockWallets(manager, [input.walletId])).get(input.walletId)!;
     assertCanDebit(wallet);
+    await input.guard?.(manager, wallet);
 
     const transaction = await createTransaction(manager, {
       reference: input.reference,
       type: 'withdrawal',
       amount: amount.toString(),
+      fee: fee.toString(),
       currency: wallet.currency,
       senderWalletId: wallet.id,
       senderUserId: wallet.userId,
@@ -318,7 +344,7 @@ export async function holdForBankDebit(input: BankMovementInput): Promise<Postin
       status: 'pending',
     });
 
-    await moveWallet(manager, transaction, wallet, { available: -amount, ledger: 0n });
+    await moveWallet(manager, transaction, wallet, { available: -(amount + fee), ledger: 0n });
     return transaction;
   });
 }
@@ -331,10 +357,21 @@ async function lockPendingHold(manager: EntityManager, transactionId: string) {
   return transaction;
 }
 
-/** The bank confirmed the withdrawal: book it against the ledger balance. Safe to call twice. */
+export interface SettleHoldOptions {
+  /** What the provider charged us for this transfer, in kobo (it leaves the bank with the amount). */
+  providerCharge?: number;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * The bank confirmed the withdrawal: book amount + fee against the ledger balance. The debit
+ * is split between what left through the bank (amount + provider charge → BANK_SETTLEMENT)
+ * and Casha's net fee (fee − provider charge → FEE_INCOME; a debit if the charge was higher).
+ * Safe to call twice.
+ */
 export async function settleHold(
   transactionId: string,
-  metadata?: Record<string, unknown>,
+  options: SettleHoldOptions = {},
 ): Promise<Transaction> {
   return AppDataSource.transaction(async (manager) => {
     const transaction = await lockPendingHold(manager, transactionId);
@@ -344,27 +381,47 @@ export async function settleHold(
     }
 
     const amount = BigInt(transaction.amount);
+    const fee = BigInt(transaction.fee);
+    const providerCharge = BigInt(options.providerCharge ?? 0);
     const walletId = transaction.senderWalletId!;
     const wallet = (await lockWallets(manager, [walletId])).get(walletId)!;
 
-    await moveWallet(manager, transaction, wallet, { available: 0n, ledger: -amount });
+    await moveWallet(manager, transaction, wallet, { available: 0n, ledger: -(amount + fee) });
     await bookSystemEntry(
       manager,
       transaction,
       SystemAccount.BANK_SETTLEMENT,
       EntryDirection.CREDIT,
-      amount,
+      amount + providerCharge,
     );
+    const netFee = fee - providerCharge;
+    if (netFee !== 0n) {
+      await bookSystemEntry(
+        manager,
+        transaction,
+        SystemAccount.FEE_INCOME,
+        netFee > 0n ? EntryDirection.CREDIT : EntryDirection.DEBIT,
+        netFee > 0n ? netFee : -netFee,
+      );
+    }
 
     transaction.status = 'success';
     transaction.completedAt = new Date();
-    transaction.metadata = { ...transaction.metadata, ...metadata };
+    transaction.metadata = {
+      ...transaction.metadata,
+      ...options.metadata,
+      providerCharge: Number(providerCharge),
+    };
     return manager.save(transaction);
   });
 }
 
-/** The bank rejected the withdrawal: give the held funds back. Safe to call twice. */
-export async function releaseHold(transactionId: string, reason: string): Promise<Transaction> {
+/** The bank rejected the withdrawal: give the held amount + fee back. Safe to call twice. */
+export async function releaseHold(
+  transactionId: string,
+  reason: string,
+  metadata?: Record<string, unknown>,
+): Promise<Transaction> {
   return AppDataSource.transaction(async (manager) => {
     const transaction = await lockPendingHold(manager, transactionId);
     if (transaction.status === 'failed') return transaction;
@@ -375,13 +432,14 @@ export async function releaseHold(transactionId: string, reason: string): Promis
     const walletId = transaction.senderWalletId!;
     const wallet = (await lockWallets(manager, [walletId])).get(walletId)!;
     await moveWallet(manager, transaction, wallet, {
-      available: BigInt(transaction.amount),
+      available: BigInt(transaction.amount) + BigInt(transaction.fee),
       ledger: 0n,
     });
 
     transaction.status = 'failed';
     transaction.failureReason = reason;
     transaction.completedAt = new Date();
+    transaction.metadata = { ...transaction.metadata, ...metadata };
     return manager.save(transaction);
   });
 }
@@ -426,6 +484,7 @@ export async function reverseTransaction(
       reference,
       type: 'reversal',
       amount: amount.toString(),
+      fee: locked.fee, // the mirrored entries refund it too
       currency: locked.currency,
       senderWalletId: locked.receiverWalletId ?? null,
       senderUserId: locked.receiverUserId ?? null,
@@ -475,7 +534,7 @@ export async function findLedgerDiscrepancies() {
       LEFT JOIN (SELECT "walletId", SUM(${signedAmount}) AS net
                    FROM ledger_entries WHERE "walletId" IS NOT NULL
                   GROUP BY "walletId") e ON e."walletId" = w.id
-      LEFT JOIN (SELECT "senderWalletId", SUM(amount) AS held
+      LEFT JOIN (SELECT "senderWalletId", SUM(amount + fee) AS held
                    FROM transactions WHERE type = 'withdrawal' AND status = 'pending'
                   GROUP BY "senderWalletId") h ON h."senderWalletId" = w.id
      WHERE w."ledgerBalance" <> COALESCE(e.net, 0)

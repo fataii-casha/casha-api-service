@@ -14,7 +14,7 @@ const userRepo = () => AppDataSource.getRepository(User);
 const PIN_SALT_ROUNDS = 12;
 const SECURITY_ANSWER_SALT_ROUNDS = 12;
 
-import { assertPinNotLocked, clearPinAttempts, registerFailedPinAttempt } from './pin-attempts';
+import { checkPinWithLockout } from './pin-attempts';
 
 export async function initiatePhoneVerification(phone: string) {
   const normalizedPhone = normalizeNigerianPhone(phone);
@@ -167,8 +167,6 @@ export async function setPinAndSecurityQuestion(input: SetPinInput) {
 }
 
 export async function verifyTransactionPin(userId: string, pin: string): Promise<boolean> {
-  await assertPinNotLocked(userId);
-
   const user = await userRepo()
     .createQueryBuilder('user')
     .addSelect('user.transactionPinHash')
@@ -179,15 +177,10 @@ export async function verifyTransactionPin(userId: string, pin: string): Promise
     throw ApiError.badRequest('Transaction PIN not set. Please set a PIN first.');
   }
 
-  const isMatch = await bcrypt.compare(pin, user.transactionPinHash);
-
-  if (isMatch) {
-    await clearPinAttempts(userId);
-  } else {
-    await registerFailedPinAttempt(userId);
-  }
-
-  return isMatch;
+  // Throws 429 while locked. Checks are serialised per user, so parallel guesses can't
+  // exceed the attempt limit.
+  const hash = user.transactionPinHash;
+  return checkPinWithLockout(userId, () => bcrypt.compare(pin, hash));
 }
 
 interface ChangePinInput {

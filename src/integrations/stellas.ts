@@ -4,6 +4,8 @@ import { logger } from '../config/logger';
 import { ApiError } from '../utils/api-error';
 
 const REQUEST_TIMEOUT_MS = 15_000;
+// Transfers took 4–6 s in the sandbox; give them longer before treating the outcome as unknown.
+const TRANSFER_TIMEOUT_MS = 45_000;
 
 /** Stellas wraps every payload in this envelope. */
 export interface StellasResponse<T> {
@@ -41,6 +43,60 @@ export interface StellasVirtualAccount {
   clientRef: string; // the reference we sent
   systemRef: string; // Stellas' own id, e.g. "STL|jYcphJZcT73yjv"
 }
+
+export interface StellasBank {
+  name: string;
+  bankCode: string; // NIBSS code (requested with nibssCode=true)
+}
+
+export interface VirtualAccountTransferInput {
+  amountKobo: number;
+  payerAccountNumber: string;
+  receiverAccountNumber: string;
+  receiverBankCode: string; // NIBSS code
+  retrievalReference: string; // ours; unique per transfer
+  narration: string;
+}
+
+/** Stellas answers HTTP 200 / status: true even when the transfer failed — read transactionStatus. */
+export interface VirtualAccountTransferResult {
+  transactionStatus: string; // seen: "failed", "pending"; success value not yet seen
+  amountKobo: number;
+  chargeKobo: number; // what Stellas took from the payer on top of the amount
+  providerReference?: string; // e.g. "STL|zDGF8RQ…"
+  message: string;
+}
+
+/** Stellas amounts ↔ kobo, per STELLAS_AMOUNT_UNIT. */
+function toStellasAmount(kobo: number): number {
+  return env.stellasAmountUnit === 'naira' ? kobo / 100 : kobo;
+}
+function fromStellasAmount(value: unknown): number {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) return 0;
+  return env.stellasAmountUnit === 'naira' ? Math.round(amount * 100) : Math.round(amount);
+}
+
+/**
+ * Whether a failed call could still have been carried out by Stellas:
+ *   not_processed — definitely not (bad request, auth, connection refused/DNS): safe to undo.
+ *   unknown       — timeout, dropped connection or 5xx after sending: the transfer may have gone
+ *                   through. Never undo these blindly; confirm with a status check first.
+ */
+export type StellasOutcome = 'not_processed' | 'unknown';
+
+export class StellasRequestError extends ApiError {
+  constructor(
+    statusCode: number,
+    message: string,
+    public readonly outcome: StellasOutcome,
+    public readonly providerError: string,
+  ) {
+    super(statusCode, message);
+  }
+}
+
+const NOT_SENT_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ERR_INVALID_URL']);
 
 function extractProviderError(errorData: unknown): string | undefined {
   if (!errorData) return undefined;
@@ -131,6 +187,50 @@ export class StellasIntegration {
     return data;
   }
 
+  /** Banks reachable by NIP, with their NIBSS codes. */
+  public async getBanks(): Promise<StellasBank[]> {
+    const { data } = await this.request<StellasBank[]>('GET', '/banks', undefined, {
+      params: { nibssCode: true },
+    });
+    return data;
+  }
+
+  /**
+   * Sends money from one of our virtual accounts to any bank account (NIP). Resolves for every
+   * answer Stellas gives — including failed — so the caller decides from transactionStatus.
+   * Throws StellasRequestError when no answer came back; check its outcome before undoing.
+   */
+  public async transferFromVirtualAccount(
+    input: VirtualAccountTransferInput,
+  ): Promise<VirtualAccountTransferResult> {
+    const response = await this.request<{
+      transactionStatus?: string;
+      amount?: unknown;
+      transactionCharge?: unknown;
+      transactionReference?: string;
+    }>(
+      'POST',
+      '/clients/business/virtual-accounts/transfer',
+      {
+        amount: toStellasAmount(input.amountKobo),
+        payerAccountNumber: input.payerAccountNumber,
+        receiverAccountNumber: input.receiverAccountNumber,
+        receiverBankCode: input.receiverBankCode,
+        retrievalReference: input.retrievalReference,
+        narration: input.narration,
+      },
+      { timeout: TRANSFER_TIMEOUT_MS },
+    );
+
+    return {
+      transactionStatus: String(response.data?.transactionStatus ?? '').toLowerCase(),
+      amountKobo: fromStellasAmount(response.data?.amount),
+      chargeKobo: fromStellasAmount(response.data?.transactionCharge),
+      providerReference: response.data?.transactionReference,
+      message: response.message,
+    };
+  }
+
   /** Opens a virtual account under Casha's business on Stellas. reference must be unique per account. */
   public async createVirtualAccount(
     input: CreateVirtualAccountInput,
@@ -147,12 +247,19 @@ export class StellasIntegration {
     method: 'GET' | 'POST',
     path: string,
     body?: unknown,
+    options: { params?: Record<string, unknown>; timeout?: number } = {},
   ): Promise<StellasResponse<T>> {
     const client = this.getClient();
     const startedAt = Date.now();
 
     try {
-      const response = await client.request<StellasResponse<T>>({ method, url: path, data: body });
+      const response = await client.request<StellasResponse<T>>({
+        method,
+        url: path,
+        data: body,
+        params: options.params,
+        timeout: options.timeout,
+      });
 
       logger.info(
         {
@@ -173,6 +280,7 @@ export class StellasIntegration {
     } catch (err) {
       let status: number | undefined;
       let providerError = 'Unknown error';
+      let outcome: StellasOutcome = 'not_processed';
       // Everything needed to debug a failed call. Never log err.config: it holds our API secret.
       const details: Record<string, unknown> = {
         method,
@@ -184,6 +292,10 @@ export class StellasIntegration {
       if (axios.isAxiosError(err)) {
         status = err.response?.status;
         providerError = extractProviderError(err.response?.data) || err.message;
+        // No answer, or a 5xx: the request may have been acted on unless it never left us.
+        if (err.response ? err.response.status >= 500 : !NOT_SENT_ERROR_CODES.has(err.code ?? '')) {
+          outcome = 'unknown';
+        }
         Object.assign(details, {
           failure: err.response ? 'http_error' : 'network_error', // no response = timeout/DNS/refused
           status,
@@ -204,8 +316,10 @@ export class StellasIntegration {
         });
       } else {
         providerError = (err as Error).message;
+        outcome = 'unknown'; // we can't tell how far it got
         Object.assign(details, { failure: 'unexpected', err });
       }
+      details.outcome = outcome;
 
       logger.error(
         { stellas: { ...details, providerError } },
@@ -223,12 +337,15 @@ export class StellasIntegration {
         );
       }
       if (!status || status >= 500 || status === 401 || status === 403 || isOurSide) {
-        throw ApiError.serviceUnavailable(
+        throw new StellasRequestError(
+          503,
           'Banking service is currently unavailable. Please try again.',
+          outcome,
+          providerError,
         );
       }
 
-      throw ApiError.badRequest(providerError);
+      throw new StellasRequestError(400, providerError, outcome, providerError);
     }
   }
 }
